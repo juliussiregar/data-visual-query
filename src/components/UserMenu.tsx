@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { LogOut, RotateCcw, Settings, ChevronDown } from "lucide-react";
 import type { AuthUser } from "@/lib/session";
-import { ROLE_LABELS } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 interface UserMenuProps {
@@ -48,7 +47,7 @@ export function UserMenu({ user, onLogout, onOpenSettings, onResetWorkspace }: U
           <p className="max-w-[90px] truncate text-xs font-medium leading-tight text-slate-800">
             {user.name}
           </p>
-          <p className="text-[10px] text-violet-600">{ROLE_LABELS[user.role]}</p>
+          <p className="text-[10px] text-slate-500">@{user.username}</p>
         </div>
         <ChevronDown
           className={cn("h-3.5 w-3.5 text-slate-400 transition-transform", open && "rotate-180")}

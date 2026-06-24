@@ -64,7 +64,7 @@ Bagian **Settings**:
 | Menu | ID view | Isi |
 |------|---------|-----|
 | **Sources** | sources | Koneksi PostgreSQL + glosarium metric |
-| **Audit Log** | audit | Riwayat aktivitas (**hanya Admin**) |
+| **Audit Log** | audit | Riwayat aktivitas workspace |
 
 Footer sidebar: jumlah baris + label scope akses (jika aktif).
 
@@ -110,14 +110,14 @@ Footer sidebar: jumlah baris + label scope akses (jika aktif).
 Tab di dalam halaman Data:
 | Tab | Fungsi |
 |-----|--------|
-| **Table** | Tabel interaktif semua baris (pagination). Viewer: PII disamarkan. |
+| **Table** | Tabel interaktif semua baris (pagination) |
 | **Columns** | **Profil Kolom** — tipe, fill rate, sample |
 | **Insights** | **Insight Otomatis** dari analyzer |
 
-Panel tambahan: **Kualitas Data**, **Metrics** (simpan metric kustom — analyst/admin).
+Panel tambahan: **Kualitas Data**, **Metrics** (simpan metric kustom).
 
 **Export CSV**
-- Tombol export di area Data (hanya **Analyst** & **Admin**, bukan Viewer).
+- Tombol export di area Data.
 
 ---
 
@@ -153,7 +153,7 @@ Google Sheet diatur lewat **Pengaturan project** / wizard project, bukan hanya d
 **Drill-through**
 - Klik batang/slice grafik → filter otomatis ke kategori yang diklik.
 
-**Scope akses (role simulation)**
+**Scope akses**
 - Membatasi baris per dimensi (mis. cabang). Terlihat di sidebar footer.
 - Data di chat & dashboard sudah terfilter scope.
 
@@ -189,30 +189,29 @@ Bar **Auto-refresh** (di atas konten dashboard):
 **Kamu bisa**
 - **Analisis data** — angka dari query engine (bukan tebakan).
 - **Navigasi & filter** — actions set_view, set_filter, dll.
-- **Widget proposal** — buat/ubah/hapus widget dengan **preview** + pertanyaan validasi.
+- **Widget CRUD per project** — buat, ubah, hapus widget Overview dengan **preview** + konfirmasi.
+- **Desainer proaktif** — setelah insight, tawarkan ide widget; user konfirmasi baru diterapkan.
 - **Panduan aplikasi** — jawab cara pakai (seperti dokumen ini).
 
 **Alur widget via chat**
-1. User minta widget → kamu kirim widgetProposal + validationQuestion.
-2. User klik **Lihat preview** → modal pop-out.
-3. **Ya, terapkan** / **Belum sesuai — ubah lagi**.
+1. Kamu analisis / user minta → tawarkan ide widget (semangat!) atau langsung widgetProposal jika user setuju.
+2. widgetProposal + validationQuestion → user klik **Lihat preview** → **Ya, terapkan** / **Belum sesuai**.
+3. Perubahan tersimpan di **layout project aktif** (create / update / delete).
 4. Setelah terapkan: tombol **Batalkan** untuk undo layout.
 
-**Edit natural widget**: "ubah widget batang jadi donut" → update + widgetRef.
+**Edit natural widget**: "ubah widget batang jadi donut", "hapus widget ranking", "tambah stat card" → update/create/delete + widgetRef.
 
-**Tombol cepat di chat** (contoh): navigasi, filter, bantuan widget.
+**Tombol cepat di chat** (contoh): navigasi, filter, buat widget, bantuan.
 
-**Riwayat**: maks. 5 pesan per sheet — tombol **Hapus** untuk clear.
+**Riwayat**: maks. 10 pesan terakhir per sheet — tombol **Hapus** untuk clear.
 
 ---
 
-### 13. Role pengguna
+### 13. Akses pengguna
 
-| Role | Bisa | Tidak bisa |
-|------|------|------------|
-| **Viewer** | Lihat dashboard, chat analisis, explore | Export CSV, edit widget/layout, widget proposal |
-| **Analyst** | + Export, SQL read-only (jika ada) | Audit log, sertifikasi metric |
-| **Admin** | + Audit log, kelola metric certified | — |
+Tidak ada peran terpisah — **cukup login**. User yang masuk bisa:
+- Mengedit layout & widget project miliknya (manual atau via AI chat)
+- Export CSV, koneksi database, audit log, dan semua fitur dashboard
 
 ---
 
@@ -233,8 +232,7 @@ Overview + Share link + template Executive pack.
 | Overview kosong | **Add widget** atau template |
 | Data tidak muncul | **Cek koneksi & muat data** atau **Refresh** |
 | Sheet gagal | Pastikan sheet publik; cek error merah di header |
-| Tidak bisa export | Perlu role Analyst/Admin |
-| Tidak bisa edit widget | Perlu Analyst/Admin; atau pakai AI chat (jika role允许) |
+| Widget AI tidak muncul | Klik **Ya, terapkan** di kartu proposal chat |
 | Angka chat beda dengan sheet | Cek filter aktif & scope — chat pakai data yang terlihat sekarang |
 
 ---
@@ -260,7 +258,7 @@ export function buildActiveViewHelpHint(activeView: string): string {
       "User sedang di **Explore** (Cari Data). Jelaskan syarat filter visual, operator, sort — tanpa SQL.",
     sources:
       "User sedang di **Sources**. Jelaskan koneksi PostgreSQL, tes koneksi, glosarium metric.",
-    audit: "User sedang di **Audit Log** (admin). Jelaskan riwayat aktivitas.",
+    audit: "User sedang di **Audit Log**. Jelaskan riwayat aktivitas workspace.",
   };
   return hints[activeView] ?? `User sedang di view "${activeView}".`;
 }

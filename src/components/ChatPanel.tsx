@@ -16,6 +16,7 @@ import {
   Eye,
   Check,
   Undo2,
+  Maximize2,
 } from "lucide-react";
 import type { ChatMessage, SheetData, ViewId, DashboardLayout, DataScope, WidgetProposal, WidgetProposalConfirmResult, AiQueryDataset, SuggestedFollowUp } from "@/lib/types";
 import type { DashboardAction, DashboardContext } from "@/lib/types";
@@ -33,12 +34,23 @@ import { describeWidgetProposal } from "@/lib/widget-proposal";
 import { ChatWidgetPreviewModal } from "./ChatWidgetPreviewModal";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { cn } from "@/lib/utils";
+import { type ChatPanelSize, chatPanelSizeLabel } from "@/lib/chat-size-storage";
 
 const QUICK_PROMPTS = [
   {
-    icon: LayoutDashboard,
-    text: "Tampilkan halaman grafik",
+    icon: Wand2,
+    text: "Widget apa yang cocok untuk data saya?",
     color: "hover:border-violet-500/40 hover:bg-violet-500/10",
+  },
+  {
+    icon: Sparkles,
+    text: "Buatkan widget donut distribusi status",
+    color: "hover:border-amber-500/40 hover:bg-amber-500/10",
+  },
+  {
+    icon: LayoutDashboard,
+    text: "Tambah stat card untuk metrik utama",
+    color: "hover:border-cyan-500/40 hover:bg-cyan-500/10",
   },
   {
     icon: Zap,
@@ -46,23 +58,13 @@ const QUICK_PROMPTS = [
     color: "hover:border-emerald-500/40 hover:bg-emerald-500/10",
   },
   {
-    icon: Sparkles,
-    text: "Buka overview dan ringkas data utama",
-    color: "hover:border-cyan-500/40 hover:bg-cyan-500/10",
-  },
-  {
     icon: Wand2,
     text: "Ubah widget batang jadi donut",
     color: "hover:border-amber-500/40 hover:bg-amber-500/10",
   },
   {
-    icon: Sparkles,
-    text: "Di mana tombol export CSV?",
-    color: "hover:border-cyan-500/40 hover:bg-cyan-500/10",
-  },
-  {
     icon: LayoutDashboard,
-    text: "Cara filter data di Explore?",
+    text: "Tampilkan halaman grafik",
     color: "hover:border-violet-500/40 hover:bg-violet-500/10",
   },
 ];
@@ -91,10 +93,12 @@ interface ChatPanelProps {
   userRole: UserRole;
   layout: DashboardLayout;
   sheetUrls: string[];
-  canManageWidgets: boolean;
   onApplyActions: (actions: DashboardAction[]) => void;
   onConfirmWidgetProposal: (proposal: WidgetProposal) => WidgetProposalConfirmResult;
   onUndoWidgetLayout: (snapshot: DashboardLayout) => void;
+  onWidgetProposalReceived?: () => void;
+  chatSize?: ChatPanelSize;
+  onCycleChatSize?: () => void;
   onClose?: () => void;
 }
 
@@ -108,10 +112,12 @@ export function ChatPanel({
   userRole,
   layout,
   sheetUrls,
-  canManageWidgets,
   onApplyActions,
   onConfirmWidgetProposal,
   onUndoWidgetLayout,
+  onWidgetProposalReceived,
+  chatSize = "default",
+  onCycleChatSize,
   onClose,
 }: ChatPanelProps) {
   const sheetKey = sheetUrls.length ? sheetUrls.join("||") : data.sourceUrl;
@@ -125,6 +131,7 @@ export function ChatPanel({
   const [previewMessageIndex, setPreviewMessageIndex] = useState<number | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [proposalError, setProposalError] = useState<string | null>(null);
   const hasHistory = messages.length > 0;
 
   const queryDataset: AiQueryDataset = useMemo(
@@ -200,6 +207,7 @@ export function ChatPanel({
 
       const userMessage: ChatMessage = { role: "user", content: text.trim() };
       const newMessages = [...messages, userMessage];
+      const recentForApi = newMessages.slice(-CHAT_HISTORY_LIMIT);
       setMessages(newMessages);
       setInput("");
       setLoading(true);
@@ -209,7 +217,7 @@ export function ChatPanel({
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: newMessages, queryDataset, dashboardContext }),
+          body: JSON.stringify({ messages: recentForApi, queryDataset, dashboardContext }),
         });
 
         const json = await res.json();
@@ -223,6 +231,10 @@ export function ChatPanel({
         const widgetProposal = json.widgetProposal as WidgetProposal | null | undefined;
         const suggestedFollowUps = (json.suggestedFollowUps ?? []) as SuggestedFollowUp[];
         const queryFacts = json.queryFacts as ChatMessage["queryFacts"];
+
+        if (widgetProposal) {
+          onWidgetProposalReceived?.();
+        }
 
         setMessages([
           ...newMessages,
@@ -243,7 +255,7 @@ export function ChatPanel({
         setLoading(false);
       }
     },
-    [loading, messages, queryDataset, dashboardContext, onApplyActions]
+    [loading, messages, queryDataset, dashboardContext, onApplyActions, onWidgetProposalReceived]
   );
 
   const markProposalStatus = useCallback((index: number, status: "confirmed" | "rejected") => {
@@ -254,6 +266,7 @@ export function ChatPanel({
 
   const handleConfirmProposal = useCallback(
     (proposal: WidgetProposal, messageIndex: number) => {
+      setProposalError(null);
       const result = onConfirmWidgetProposal(proposal);
       if (result.ok) {
         setMessages((prev) =>
@@ -267,6 +280,8 @@ export function ChatPanel({
               : m
           )
         );
+      } else {
+        setProposalError("Gagal menerapkan widget. Periksa konfigurasi widget dan coba lagi.");
       }
       return result.ok;
     },
@@ -317,24 +332,56 @@ export function ChatPanel({
             </div>
             <div>
               <h3 className="text-sm font-semibold text-slate-900">SheetVision AI</h3>
-              <p className="text-[10px] text-emerald-600">Query engine aktif · Angka dari kode</p>
+              <p className="text-[10px] text-emerald-600">
+                Query engine aktif · CRUD widget project · {chatPanelSizeLabel(chatSize)}
+              </p>
             </div>
           </div>
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900"
-              aria-label="Tutup chat"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
+          <div className="flex items-center gap-1">
+            {onCycleChatSize && (
+              <button
+                type="button"
+                onClick={onCycleChatSize}
+                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-600"
+                aria-label={chatPanelSizeLabel(chatSize)}
+                title={chatPanelSizeLabel(chatSize)}
+              >
+                <Maximize2 className="h-4 w-4" />
+              </button>
+            )}
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                aria-label="Tutup chat"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Messages */}
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        {messages.some((m) => m.widgetProposal && m.proposalStatus === "pending") && (
+          <div className="rounded-xl border-2 border-violet-400 bg-violet-50 px-3 py-2.5 text-xs text-violet-900 shadow-sm">
+            <p className="font-semibold">Widget menunggu konfirmasi</p>
+            <p className="mt-0.5 text-violet-700">
+              Scroll ke bawah → klik <strong>Lihat preview</strong> lalu{" "}
+              <strong>Ya, terapkan</strong> supaya widget muncul di Overview.
+            </p>
+          </div>
+        )}
+
+        {proposalError && (
+          <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-600">
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {proposalError}
+          </div>
+        )}
+
         {hasHistory && (
           <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
             <div className="flex items-center gap-2 text-[10px] text-slate-500">
@@ -362,9 +409,13 @@ export function ChatPanel({
                 <span className="text-xs font-semibold text-indigo-600">Asisten Dashboard</span>
               </div>
               <p className="text-xs leading-relaxed text-slate-600">
-                Saya bisa menganalisis data <strong className="text-slate-600">dan</strong> mengatur
-                tampilan — ganti halaman, filter data, buka grafik atau insights. Coba perintah di
-                bawah!
+                Saya analisis data <strong className="text-slate-600">dan</strong> bantu merancang
+                Overview Anda — buat, ubah, atau hapus widget di project ini. Setelah insight, saya
+                sering <strong className="text-slate-600">menawarkan ide widget</strong>; klik{" "}
+                <strong className="text-slate-600">Ya, terapkan</strong> untuk menambahkannya.
+              </p>
+              <p className="mt-2 text-[11px] leading-relaxed text-violet-700">
+                Coba: &quot;Widget apa yang cocok?&quot; atau &quot;Buatkan donut status&quot;
               </p>
             </div>
             <div className="grid gap-2">
@@ -468,8 +519,14 @@ export function ChatPanel({
                       type="button"
                       disabled={loading}
                       onClick={() => sendMessage(followUp.message)}
-                      className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[10px] font-medium text-indigo-700 transition-colors hover:border-indigo-300 hover:bg-indigo-100 disabled:opacity-50"
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors disabled:opacity-50",
+                        followUp.kind === "widget"
+                          ? "border-violet-300 bg-violet-50 text-violet-800 hover:border-violet-400 hover:bg-violet-100"
+                          : "border-indigo-200 bg-indigo-50 text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100"
+                      )}
                     >
+                      {followUp.kind === "widget" && <Wand2 className="h-2.5 w-2.5 shrink-0" />}
                       {followUp.label}
                     </button>
                   ))}
@@ -514,7 +571,7 @@ export function ChatPanel({
                 </div>
               )}
 
-              {msg.widgetProposal && canManageWidgets && (
+              {msg.widgetProposal && (
                 <div
                   className={cn(
                     "rounded-xl border px-3 py-3 text-xs",
@@ -522,7 +579,7 @@ export function ChatPanel({
                       ? "border-emerald-200 bg-emerald-50"
                       : msg.proposalStatus === "rejected"
                         ? "border-slate-200 bg-slate-50 opacity-70"
-                        : "border-violet-200 bg-violet-50"
+                        : "border-violet-400 bg-violet-50 ring-2 ring-violet-200/80"
                   )}
                 >
                   <p className="font-semibold text-violet-900">

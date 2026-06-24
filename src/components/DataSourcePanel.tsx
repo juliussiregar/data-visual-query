@@ -4,16 +4,13 @@ import { Sheet, Sparkles } from "lucide-react";
 import { SectionHeader } from "./SectionHeader";
 import { DatabaseConnectionsPanel } from "./DatabaseConnectionsPanel";
 import type { SheetData } from "@/lib/types";
-import type { UserRole } from "@/lib/auth";
 
 interface DataSourcePanelProps {
-  role: UserRole;
   onLoadToDashboard?: (data: SheetData) => void;
   onLoadingChange?: (loading: boolean) => void;
 }
 
 export function DataSourcePanel({
-  role,
   onLoadToDashboard,
   onLoadingChange,
 }: DataSourcePanelProps) {
@@ -53,7 +50,6 @@ export function DataSourcePanel({
       <hr className="border-slate-100" />
 
       <DatabaseConnectionsPanel
-        role={role}
         onLoadToDashboard={onLoadToDashboard}
         onLoadingChange={onLoadingChange}
       />

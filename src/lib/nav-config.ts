@@ -85,11 +85,8 @@ export const DATA_VIEW_IDS = new Set<ViewId>(
   NAV_SECTIONS[0].items.filter((i) => i.requiresData).map((i) => i.id)
 );
 
-export function navItemsForRole(role?: UserRole): NavSection[] {
-  return NAV_SECTIONS.map((section) => ({
-    ...section,
-    items: section.items.filter((item) => !item.adminOnly || role === "admin"),
-  })).filter((section) => section.items.length > 0);
+export function navItemsForRole(_role?: UserRole): NavSection[] {
+  return NAV_SECTIONS;
 }
 
 export function flatNavItemsForRole(role?: UserRole): NavItem[] {

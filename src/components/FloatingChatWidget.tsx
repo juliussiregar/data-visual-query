@@ -1,12 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { Bot, X, Sparkles } from "lucide-react";
 import type { SheetData, ViewId, DashboardLayout, DataScope } from "@/lib/types";
 import type { UserRole } from "@/lib/auth";
 import type { DashboardAction, WidgetProposal, WidgetProposalConfirmResult } from "@/lib/types";
 import { ChatPanel } from "./ChatPanel";
 import { cn } from "@/lib/utils";
+import {
+  type ChatPanelSize,
+  cycleChatPanelSize,
+  loadChatPanelSize,
+  saveChatPanelSize,
+} from "@/lib/chat-size-storage";
 
 interface FloatingChatWidgetProps {
   userId: string;
@@ -21,6 +27,45 @@ interface FloatingChatWidgetProps {
   onApplyActions: (actions: DashboardAction[]) => void;
   onConfirmWidgetProposal: (proposal: WidgetProposal) => WidgetProposalConfirmResult;
   onUndoWidgetLayout: (snapshot: DashboardLayout) => void;
+  onWidgetProposalReceived?: () => void;
+}
+
+function panelShellClass(size: ChatPanelSize, open: boolean): string {
+  if (!open) {
+    return "pointer-events-none h-0 w-0 border-0 opacity-0";
+  }
+  const base =
+    "chat-pop-in pointer-events-auto flex flex-col overflow-hidden rounded-2xl border border-slate-300 shadow-2xl shadow-indigo-500/20 transition-all duration-300 ease-out layer-chat fixed";
+
+  switch (size) {
+    case "fullscreen":
+      return cn(
+        base,
+        "inset-3 z-[120] opacity-100 sm:inset-4 sm:left-auto sm:w-[min(960px,calc(100vw-2rem))]"
+      );
+    case "large":
+      return cn(
+        base,
+        "right-4 bottom-[5.5rem] z-[110] w-[min(720px,calc(100vw-1.5rem))] opacity-100 sm:right-6 sm:bottom-24"
+      );
+    default:
+      return cn(
+        base,
+        "right-4 bottom-[5.5rem] z-[110] w-[min(480px,calc(100vw-1.5rem))] opacity-100 sm:right-6 sm:bottom-24"
+      );
+  }
+}
+
+function panelHeightStyle(size: ChatPanelSize, open: boolean): CSSProperties | undefined {
+  if (!open) return undefined;
+  switch (size) {
+    case "fullscreen":
+      return { height: "auto", top: "0.75rem", bottom: "0.75rem" };
+    case "large":
+      return { height: "min(85vh, 900px)" };
+    default:
+      return { height: "min(680px, calc(100vh - 5.5rem))" };
+  }
 }
 
 export function FloatingChatWidget({
@@ -36,28 +81,35 @@ export function FloatingChatWidget({
   onApplyActions,
   onConfirmWidgetProposal,
   onUndoWidgetLayout,
+  onWidgetProposalReceived,
 }: FloatingChatWidgetProps) {
   const [open, setOpen] = useState(false);
+  const [chatSize, setChatSize] = useState<ChatPanelSize>(() => loadChatPanelSize());
+
+  const handleCycleSize = () => {
+    setChatSize((prev) => {
+      const next = cycleChatPanelSize(prev);
+      saveChatPanelSize(next);
+      return next;
+    });
+  };
 
   return (
     <>
       {open && (
         <div
-          className="layer-chat fixed inset-0 bg-black/40 backdrop-blur-[2px] sm:bg-black/25"
+          className={cn(
+            "layer-chat fixed inset-0 bg-black/40 backdrop-blur-[2px]",
+            chatSize === "fullscreen" ? "z-[115]" : "z-[105] sm:bg-black/25"
+          )}
           onClick={() => setOpen(false)}
           aria-hidden
         />
       )}
 
       <div
-        className={cn(
-          "layer-chat fixed flex flex-col overflow-hidden rounded-2xl border border-slate-300 shadow-2xl shadow-indigo-500/20 transition-all duration-300 ease-out",
-          "right-4 bottom-[5.5rem] sm:right-6 sm:bottom-24",
-          open
-            ? "chat-pop-in pointer-events-auto w-[calc(100vw-1.5rem)] opacity-100 sm:w-[420px]"
-            : "pointer-events-none h-0 w-0 border-0 opacity-0"
-        )}
-        style={open ? { height: "min(580px, calc(100vh - 7rem))" } : undefined}
+        className={panelShellClass(chatSize, open)}
+        style={panelHeightStyle(chatSize, open)}
         role="dialog"
         aria-label="AI Chat"
         aria-hidden={!open}
@@ -76,7 +128,9 @@ export function FloatingChatWidget({
             onApplyActions={onApplyActions}
             onConfirmWidgetProposal={onConfirmWidgetProposal}
             onUndoWidgetLayout={onUndoWidgetLayout}
-            canManageWidgets={userRole !== "viewer"}
+            onWidgetProposalReceived={onWidgetProposalReceived}
+            chatSize={chatSize}
+            onCycleChatSize={handleCycleSize}
             onClose={() => setOpen(false)}
           />
         )}
@@ -88,7 +142,7 @@ export function FloatingChatWidget({
         aria-label={open ? "Tutup chat AI" : "Buka chat AI"}
         aria-expanded={open}
         className={cn(
-          "layer-chat group fixed bottom-6 right-6 flex h-[3.75rem] w-[3.75rem] items-center justify-center rounded-full transition-all duration-300 hover:scale-105 active:scale-95",
+          "layer-chat group fixed bottom-6 right-6 z-[110] flex h-[3.75rem] w-[3.75rem] items-center justify-center rounded-full transition-all duration-300 hover:scale-105 active:scale-95",
           open
             ? "bg-white text-slate-700 shadow-xl ring-2 ring-slate-200 hover:bg-slate-50"
             : "bg-gradient-to-br from-indigo-500 via-violet-500 to-violet-600 text-white shadow-xl shadow-indigo-500/40 hover:shadow-indigo-500/60"

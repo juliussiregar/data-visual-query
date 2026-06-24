@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolvePostgresConfig, testPostgresConnection } from "@/lib/connectors/postgres";
-import { rolePermissions } from "@/lib/auth";
 import { AuthError, requireSessionUser } from "@/lib/session-server";
 
 export const dynamic = "force-dynamic";
@@ -8,12 +7,6 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const user = await requireSessionUser(request);
-    if (!rolePermissions(user.role).canQuerySQL) {
-      return NextResponse.json(
-        { error: "Koneksi database memerlukan role Analyst atau Admin" },
-        { status: 403 }
-      );
-    }
 
     const body = await request.json();
     const config = await resolvePostgresConfig(body, user.id);

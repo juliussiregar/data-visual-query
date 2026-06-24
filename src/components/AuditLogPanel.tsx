@@ -102,7 +102,7 @@ export function AuditLogPanel() {
             <h2 className="text-lg font-semibold text-slate-900">Audit Log</h2>
           </div>
           <p className="text-sm text-slate-500">
-            Riwayat aktivitas penting di workspace ini — hanya admin.
+            Riwayat aktivitas penting di workspace Anda.
           </p>
         </div>
         <button

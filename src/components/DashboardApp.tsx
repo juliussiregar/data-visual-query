@@ -785,6 +785,15 @@ export function DashboardApp() {
     [sheetData, sheetUrls, layout, loadSheets]
   );
 
+  const handleWidgetProposalReceived = useCallback(() => {
+    setActiveView("overview");
+    setMobileNav(false);
+    toast(
+      "Widget siap — klik Ya terapkan atau Lihat preview di chat untuk menambahkannya ke Overview.",
+      "info"
+    );
+  }, [toast]);
+
   const handleConfirmWidgetProposal = useCallback(
     (proposal: WidgetProposal): WidgetProposalConfirmResult => {
       if (!layout || !perms.canEditLayout) return { ok: false };
@@ -799,7 +808,7 @@ export function DashboardApp() {
       }
 
       setLayout(next);
-      void flushSave();
+      void flushSave(next);
       setActiveView("overview");
       setMobileNav(false);
       logAuditClient(
@@ -824,7 +833,7 @@ export function DashboardApp() {
     (snapshot: DashboardLayout) => {
       if (!perms.canEditLayout) return;
       setLayout(snapshot);
-      void flushSave();
+      void flushSave(snapshot);
       logAuditClient("layout_change", "Undo perubahan widget AI", {}, userRole);
       toast("Perubahan widget dibatalkan");
     },
@@ -844,15 +853,6 @@ export function DashboardApp() {
 
   const renderView = () => {
     if (activeView === "audit") {
-      if (!perms.canViewAudit) {
-        return (
-          <ViewPageShell title="Audit Log" description="Akses dibatasi untuk admin.">
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-8 text-center text-sm text-amber-800">
-              Anda tidak memiliki izin melihat audit log.
-            </div>
-          </ViewPageShell>
-        );
-      }
       return <AuditLogPanel />;
     }
 
@@ -860,7 +860,6 @@ export function DashboardApp() {
       return (
         <div className="space-y-4">
           <DataSourcePanel
-            role={userRole}
             onLoadToDashboard={loadFromDatabase}
             onLoadingChange={setLoading}
           />
@@ -1231,6 +1230,7 @@ export function DashboardApp() {
               onApplyActions={applyChatActions}
               onConfirmWidgetProposal={handleConfirmWidgetProposal}
               onUndoWidgetLayout={handleUndoWidgetLayout}
+              onWidgetProposalReceived={handleWidgetProposalReceived}
             />
           )}
         </div>

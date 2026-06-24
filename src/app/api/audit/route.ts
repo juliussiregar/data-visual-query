@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { rolePermissions } from "@/lib/auth";
 import { AuthError, requireSessionUser } from "@/lib/session-server";
 import { appendAuditEvent, getAuditEvents } from "@/lib/audit-log";
 import type { AuditEventType } from "@/lib/audit-log";
@@ -9,9 +8,6 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const user = await requireSessionUser(request);
-    if (!rolePermissions(user.role).canViewAudit) {
-      return NextResponse.json({ error: "Audit access requires Admin role" }, { status: 403 });
-    }
     const limit = parseInt(request.nextUrl.searchParams.get("limit") ?? "50", 10);
     const events = await getAuditEvents(limit);
     return NextResponse.json({ events });

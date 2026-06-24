@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import type { ChatMessage, DashboardAction, SuggestedFollowUp } from "./types";
 import type { AiQueryDataset, AiQueryFact } from "./types";
+import { CHAT_HISTORY_LIMIT } from "./chat-storage";
 import { buildAnalyticsPack } from "./ai-analytics-pack";
 import {
   AI_QUERY_TOOL_DEFINITIONS,
@@ -87,9 +88,11 @@ export async function runAiChatWithTools(
   const analyticsPack = buildAnalyticsPack(dataset);
   const systemContent = `${buildChatSystemPrompt()}\n\n--- ANALYTICS PACK ---\n${analyticsPack}${ctx.dashboardContextBlock}`;
 
+  const recentMessages = messages.slice(-CHAT_HISTORY_LIMIT);
+
   const chatMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: "system", content: systemContent },
-    ...messages.map((m) => ({
+    ...recentMessages.map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
     })),

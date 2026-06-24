@@ -19,8 +19,6 @@ import {
   Server,
 } from "lucide-react";
 import type { DatabaseConnectionProfile, SheetData } from "@/lib/types";
-import type { UserRole } from "@/lib/auth";
-import { rolePermissions } from "@/lib/auth";
 import {
   fetchDbConnections,
   saveDbConnection,
@@ -31,7 +29,6 @@ import {
 import { cn } from "@/lib/utils";
 
 interface DatabaseConnectionsPanelProps {
-  role: UserRole;
   onLoadToDashboard?: (data: SheetData) => void;
   onLoadingChange?: (loading: boolean) => void;
 }
@@ -55,11 +52,9 @@ const EMPTY_FORM = {
 };
 
 export function DatabaseConnectionsPanel({
-  role,
   onLoadToDashboard,
   onLoadingChange,
 }: DatabaseConnectionsPanelProps) {
-  const perms = rolePermissions(role);
   const [connections, setConnections] = useState<DatabaseConnectionProfile[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -218,23 +213,6 @@ export function DatabaseConnectionsPanel({
     setPreview(null);
     void fetchTables(profile);
   };
-
-  if (!perms.canQuerySQL && role === "viewer") {
-    return (
-      <div className="surface-card border-amber-200 bg-amber-50/50 p-5">
-        <div className="flex gap-3">
-          <Shield className="h-5 w-5 shrink-0 text-amber-600" />
-          <div>
-            <p className="text-sm font-medium text-amber-900">Koneksi database</p>
-            <p className="mt-1 text-xs text-amber-800">
-              Role <strong>Viewer</strong> tidak dapat menambah koneksi database.
-              Hubungi admin untuk mengubah peran akun.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <section className="space-y-5">

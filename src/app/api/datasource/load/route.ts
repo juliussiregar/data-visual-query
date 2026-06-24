@@ -6,7 +6,6 @@ import {
   postgresSourceLabel,
 } from "@/lib/connectors/postgres";
 import { appendAuditEvent } from "@/lib/audit-log";
-import { rolePermissions } from "@/lib/auth";
 import { AuthError, requireSessionUser } from "@/lib/session-server";
 
 export const dynamic = "force-dynamic";
@@ -16,12 +15,6 @@ const MAX_LOAD_ROWS = 500;
 export async function POST(request: NextRequest) {
   try {
     const user = await requireSessionUser(request);
-    if (!rolePermissions(user.role).canQuerySQL) {
-      return NextResponse.json(
-        { error: "Memuat dari database memerlukan role Analyst atau Admin" },
-        { status: 403 }
-      );
-    }
 
     const body = await request.json();
     const { table, connectionName } = body ?? {};

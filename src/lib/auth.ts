@@ -1,28 +1,24 @@
 /**
- * Autentikasi pengguna — session cookie + role dari database.
+ * Autentikasi pengguna — session cookie.
+ * Tidak ada pembatasan per-role: user yang login punya akses penuh ke project miliknya.
  */
 export type UserRole = "viewer" | "analyst" | "admin";
 
+/** @deprecated Kolom legacy di database; tidak memengaruhi izin. */
 export const ROLE_LABELS: Record<UserRole, string> = {
-  viewer: "Viewer",
-  analyst: "Analyst",
-  admin: "Admin",
+  viewer: "User",
+  analyst: "User",
+  admin: "User",
 };
 
-export const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
-  viewer: "PII disamarkan · tanpa SQL",
-  analyst: "SQL read-only · export",
-  admin: "Audit log · kelola metric",
-};
-
-export function rolePermissions(role: UserRole) {
+export function rolePermissions(_role?: UserRole) {
   return {
-    maskPII: role === "viewer",
-    canQuerySQL: role === "analyst" || role === "admin",
-    canViewAudit: role === "admin",
-    canCertifyMetrics: role === "admin",
-    canEditLayout: role !== "viewer",
-    canExport: role !== "viewer",
+    maskPII: false,
+    canQuerySQL: true,
+    canViewAudit: true,
+    canCertifyMetrics: true,
+    canEditLayout: true,
+    canExport: true,
   };
 }
 

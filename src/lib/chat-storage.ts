@@ -1,7 +1,7 @@
 import type { ChatMessage } from "./types";
 import { userScopedKey } from "./user-local-storage";
 
-export const CHAT_HISTORY_LIMIT = 5;
+export const CHAT_HISTORY_LIMIT = 10;
 const CHAT_STORE_SUFFIX = "chat";
 
 function isBrowser() {

@@ -6,20 +6,24 @@ import type { DashboardContext } from "@/lib/types";
 import { getOpenAIConfig, getOpenAIConfigError } from "@/lib/openai-config";
 import { parseAiQueryDataset } from "@/lib/ai-query-dataset";
 import { runAiChatWithTools } from "@/lib/ai-chat-runner";
-import { rolePermissions } from "@/lib/auth";
 import { AuthError, requireSessionUser } from "@/lib/session-server";
 
 export const dynamic = "force-dynamic";
 
-function buildDashboardContextBlock(ctx: DashboardContext | undefined, canEditLayout: boolean): string {
+function buildDashboardContextBlock(ctx: DashboardContext | undefined): string {
   if (!ctx) return "";
 
   const scopeLine = ctx.dataScope?.values?.length
     ? `Scope aktif: kolom "${ctx.dataScope.columnKey}" = ${ctx.dataScope.values.join(", ")}`
     : "Scope akses: tidak aktif (seluruh sheet)";
-  const editLayoutNote = canEditLayout
-    ? "User BOLEH edit widget (kirim widgetProposal jika diminta)."
-    : "User VIEWER — JANGAN kirim widgetProposal; hanya jelaskan cara pakai atau analisis data.";
+  const editLayoutNote =
+    "User login — BOLEH CRUD widget di project ini (create/update/delete via widgetProposal). Tawarkan ide widget secara proaktif setelah insight — minimal 1 suggestedFollowUp kind widget.";
+
+  const visibleWidgetCount = ctx.layoutWidgets.filter((w) => w.visible).length;
+  const widgetCoaching =
+    visibleWidgetCount < 3
+      ? `\nCOACHING: Overview punya ${visibleWidgetCount} widget visible — sedikit! Setelah jawab, tawarkan 1–2 ide widget konkret (kolom + bentuk) + chip kind "widget".`
+      : `\nCOACHING: ${visibleWidgetCount} widget di Overview. Tawarkan update/hapus/tambah jika relevan dengan pertanyaan user.`;
 
   const filterLines = ctx.filterableColumns
     .map((c) => `- ${c.label} (key: ${c.key}): [${c.values.join(", ")}]`)
@@ -49,7 +53,7 @@ ${filterLines}
 Grafik auto-detect: ${ctx.chartTitles.join("; ")}
 
 Layout widgets:
-${widgetLines}`;
+${widgetLines}${widgetCoaching}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -76,7 +80,6 @@ export async function POST(request: NextRequest) {
     }
 
     const ctx = dashboardContext as DashboardContext | undefined;
-    const canEditLayout = ctx?.userRole ? rolePermissions(ctx.userRole).canEditLayout : true;
 
     const openai = new OpenAI({ apiKey: config.apiKey });
 
@@ -86,12 +89,11 @@ export async function POST(request: NextRequest) {
       dataset,
       messages as ChatMessage[],
       {
-        dashboardContextBlock: buildDashboardContextBlock(ctx, canEditLayout),
+        dashboardContextBlock: buildDashboardContextBlock(ctx),
       }
     );
 
-    const safeProposal =
-      result.widgetProposal && canEditLayout ? result.widgetProposal : null;
+    const safeProposal = result.widgetProposal;
 
     return NextResponse.json({
       reply: result.reply,

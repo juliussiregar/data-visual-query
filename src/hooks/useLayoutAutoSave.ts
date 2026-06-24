@@ -59,10 +59,25 @@ export function useLayoutAutoSave(
     };
   }, [layout, enabled, persist, onStatusChange]);
 
-  const flushSave = useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    return persist();
-  }, [persist]);
+  const flushSave = useCallback(
+    async (override?: DashboardLayout) => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      const toSave = override ?? layoutRef.current;
+      if (!toSave) return false;
+      onStatusChange("saving");
+      const ok = projectId
+        ? await saveProjectLayout(projectId, toSave)
+        : await saveRemoteLayout(toSave);
+      if (ok) {
+        lastSavedRef.current = JSON.stringify(toSave);
+        onStatusChange("synced");
+      } else {
+        onStatusChange("error");
+      }
+      return ok;
+    },
+    [onStatusChange, projectId]
+  );
 
   const markSynced = useCallback((l: DashboardLayout) => {
     lastSavedRef.current = JSON.stringify(l);
