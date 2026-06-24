@@ -7,7 +7,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 FROM base AS deps
 RUN apk add --no-cache libc6-compat
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN corepack enable && npm ci
 
 FROM base AS builder
 RUN apk add --no-cache libc6-compat
