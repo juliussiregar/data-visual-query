@@ -41,7 +41,7 @@ export function KPICards({ metrics }: KPICardsProps) {
           <div
             key={metric.id}
             className={cn(
-              "animate-fade-in-up relative overflow-hidden rounded-2xl border border-white/10 p-5 backdrop-blur-sm transition-all duration-300 hover:-translate-y-1 hover:border-white/20 hover:shadow-xl",
+              "glass-card animate-fade-in-up relative overflow-hidden rounded-2xl p-5 transition-all duration-300 hover:-translate-y-0.5 hover:border-white/15 hover:shadow-xl hover:shadow-indigo-500/5",
               `stagger-${Math.min(index + 1, 6)}`
             )}
           >

@@ -128,7 +128,20 @@ export function aggregateData(
 }
 
 function pickChartType(uniqueCount: number, index: number): ChartType {
-  const types: ChartType[] = ["donut", "pie", "bar", "horizontalBar", "area", "radial"];
+  const types: ChartType[] = [
+    "donut",
+    "pie",
+    "bar",
+    "horizontalBar",
+    "stackedBar",
+    "area",
+    "radial",
+    "treemap",
+    "radar",
+    "composed",
+    "line",
+    "scatter",
+  ];
   if (uniqueCount <= 5) return types[index % 3];
   if (uniqueCount <= 10) return types[(index + 2) % types.length];
   return index % 2 === 0 ? "horizontalBar" : "bar";

@@ -16,7 +16,27 @@ export type ChartType =
   | "horizontalBar"
   | "line"
   | "area"
-  | "radial";
+  | "radial"
+  | "stackedBar"
+  | "scatter"
+  | "treemap"
+  | "radar"
+  | "composed";
+
+export const ALL_CHART_TYPES: ChartType[] = [
+  "donut",
+  "pie",
+  "bar",
+  "horizontalBar",
+  "stackedBar",
+  "line",
+  "area",
+  "radial",
+  "scatter",
+  "treemap",
+  "radar",
+  "composed",
+];
 
 export interface ChartConfig {
   id: string;
@@ -90,11 +110,55 @@ export interface ChatMessage {
 
 export type ViewId = "overview" | "charts" | "insights" | "data" | "columns";
 
+export type WidgetType =
+  | "kpis"
+  | "hero_chart"
+  | "distribution"
+  | "top_records"
+  | "insights"
+  | "chart";
+
+export interface WidgetConfig {
+  id: string;
+  type: WidgetType;
+  visible: boolean;
+  order: number;
+  span?: 1 | 2 | 3;
+  chartId?: string;
+  chartType?: ChartType;
+  categoryKey?: string;
+  valueKey?: string;
+  aggregation?: "count" | "sum" | "avg";
+  title?: string;
+}
+
+export interface DashboardLayout {
+  version: 1;
+  sheetUrls: string[];
+  mergeMode: boolean;
+  widgets: WidgetConfig[];
+  updatedAt: string;
+}
+
 export type DashboardAction =
   | { type: "set_view"; view: ViewId }
   | { type: "set_filter"; column: string; value: string }
   | { type: "set_filters"; filters: Record<string, string> }
-  | { type: "clear_filters" };
+  | { type: "clear_filters" }
+  | { type: "set_widget_visibility"; widgetId: string; visible: boolean }
+  | { type: "set_chart_type"; chartId: string; chartType: ChartType }
+  | {
+      type: "set_chart_columns";
+      chartId: string;
+      categoryKey: string;
+      valueKey?: string;
+      aggregation?: "count" | "sum" | "avg";
+    }
+  | { type: "reorder_widget"; widgetId: string; order: number }
+  | { type: "add_sheet"; url: string }
+  | { type: "remove_sheet"; url: string }
+  | { type: "set_merge_mode"; enabled: boolean }
+  | { type: "reset_layout" };
 
 export interface DashboardContext {
   activeView: ViewId;
@@ -102,4 +166,8 @@ export interface DashboardContext {
   views: ViewId[];
   filterableColumns: { key: string; label: string; values: string[] }[];
   chartTitles: string[];
+  layoutWidgets: { id: string; type: WidgetType; visible: boolean; title: string }[];
+  sheetUrls: string[];
+  mergeMode: boolean;
+  editMode: boolean;
 }

@@ -21,21 +21,28 @@ Kamu punya DUA peran:
 - columns: profil & statistik tiap kolom
 
 ## Actions yang bisa kamu kirim
-Kirim array "actions" untuk mengubah dashboard saat user meminta navigasi, filter, atau penyesuaian tampilan.
+Kirim array "actions" untuk mengubah dashboard saat user meminta navigasi, filter, layout widget, atau grafik.
 
-Tipe actions:
+### Navigasi & filter
 - { "type": "set_view", "view": "overview"|"charts"|"insights"|"data"|"columns" }
 - { "type": "set_filter", "column": "nama kolom", "value": "nilai filter" }
 - { "type": "set_filters", "filters": { "Kolom": "Nilai", ... } }
 - { "type": "clear_filters" }
 
-Contoh permintaan user → actions:
-- "tampilkan grafik" → set_view charts
-- "buka insights" → set_view insights
-- "filter status akad saja" → set_filter column Status value Akad
-- "tampilkan nasabah prioritas YA" → set_filter column "Nasabah Prioritas" value YA
-- "reset filter" → clear_filters
-- "tampilkan tabel dan filter cancel" → set_view data + set_filter Status Berkas Cancel
+### Layout Overview (widget on/off, grafik, kolom)
+- { "type": "set_widget_visibility", "widgetId": "widget-kpis", "visible": true|false }
+- { "type": "set_chart_type", "chartId": "count-Status", "chartType": "bar"|"pie"|"donut"|"line"|"area"|"radial"|"horizontalBar"|"stackedBar"|"scatter"|"treemap"|"radar"|"composed" }
+- { "type": "set_chart_columns", "chartId": "count-Status", "categoryKey": "Status", "valueKey": "Plafond", "aggregation": "count"|"sum"|"avg" }
+- { "type": "reset_layout" }
+
+### Multi-sheet
+- { "type": "add_sheet", "url": "https://docs.google.com/spreadsheets/..." }
+- { "type": "remove_sheet", "url": "..." }
+- { "type": "set_merge_mode", "enabled": true|false }
+
+Widget ID umum: widget-kpis, widget-hero-chart, widget-distribution, widget-top-records, widget-insights, widget-chart-{chartId}
+Gunakan dashboardContext.layoutWidgets untuk daftar widget & visibility.
+Gunakan chartTitles untuk chartId yang valid.
 
 ## Format respons WAJIB (JSON valid)
 {
@@ -84,7 +91,7 @@ export async function POST(request: NextRequest) {
 
     const ctx = dashboardContext as DashboardContext | undefined;
     const contextBlock = ctx
-      ? `\n\n--- DASHBOARD CONTEXT ---\nView aktif: ${ctx.activeView}\nFilter aktif: ${JSON.stringify(ctx.filters)}\nViews tersedia: ${ctx.views.join(", ")}\nKolom bisa difilter:\n${ctx.filterableColumns.map((c) => `- ${c.label} (key: ${c.key}): [${c.values.slice(0, 12).join(", ")}]`).join("\n")}\nGrafik tersedia: ${ctx.chartTitles.join("; ")}`
+      ? `\n\n--- DASHBOARD CONTEXT ---\nView aktif: ${ctx.activeView}\nMode edit: ${ctx.editMode}\nFilter aktif: ${JSON.stringify(ctx.filters)}\nSheet URLs: ${ctx.sheetUrls.join(" | ")}\nMerge mode: ${ctx.mergeMode}\nViews tersedia: ${ctx.views.join(", ")}\nKolom bisa difilter:\n${ctx.filterableColumns.map((c) => `- ${c.label} (key: ${c.key}): [${c.values.slice(0, 12).join(", ")}]`).join("\n")}\nGrafik tersedia: ${ctx.chartTitles.join("; ")}\nLayout widgets:\n${ctx.layoutWidgets.map((w) => `- ${w.id} (${w.type}): ${w.visible ? "visible" : "hidden"} — ${w.title}`).join("\n")}`
       : "";
 
     const openai = new OpenAI({ apiKey: config.apiKey });

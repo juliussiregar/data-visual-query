@@ -8,26 +8,23 @@ import {
   Menu,
   X,
 } from "lucide-react";
-import type { SheetData, ViewId } from "@/lib/types";
+import type { SheetData, ViewId, DashboardLayout, DashboardAction } from "@/lib/types";
 import { reanalyze, getFilterableColumns, type Filters } from "@/lib/filters";
-import type { DashboardAction } from "@/lib/types";
-import { findColumnKey } from "@/lib/chat-actions";
+import { findColumnKey, applyLayoutActions } from "@/lib/chat-actions";
 import { LinkInput } from "./LinkInput";
-import { KPICards } from "./KPICards";
 import { ChartCard } from "./ChartCard";
 import { DataTable } from "./DataTable";
 import { FloatingChatWidget } from "./FloatingChatWidget";
 import { Sidebar, NAV_ITEMS } from "./Sidebar";
 import { FilterBar } from "./FilterBar";
-import { StatusDistribution } from "./StatusDistribution";
-import { InsightsPanel } from "./InsightsPanel";
-import { TopRecords } from "./TopRecords";
 import { ColumnInsights } from "./ColumnInsights";
-import { HeroChart } from "./HeroChart";
 import { LoadingSkeleton } from "./LoadingSkeleton";
 import { LandingFeatures } from "./LandingFeatures";
 import { SectionHeader } from "./SectionHeader";
 import { SavedSheetsMenu } from "./SavedSheetsMenu";
+import { InsightsPanel } from "./InsightsPanel";
+import { StatusDistribution } from "./StatusDistribution";
+import { TopRecords } from "./TopRecords";
 import {
   getLastUrl,
   setLastUrl as persistLastUrl,
@@ -35,6 +32,18 @@ import {
   touchSavedSheet,
   truncateUrl,
 } from "@/lib/sheet-storage";
+import { OverviewDashboard } from "./OverviewDashboard";
+import {
+  createDefaultLayout,
+  mergeLayoutWithData,
+} from "@/lib/layout";
+import {
+  fetchRemoteLayout,
+  getLayoutKey,
+  syncLayoutKeyToUrl,
+  copyDashboardShareUrl,
+} from "@/lib/layout-storage";
+import { useLayoutAutoSave, type LayoutSyncStatus } from "@/hooks/useLayoutAutoSave";
 import { cn } from "@/lib/utils";
 
 export function DashboardApp() {
@@ -47,38 +56,87 @@ export function DashboardApp() {
   const [activeView, setActiveView] = useState<ViewId>("overview");
   const [filters, setFilters] = useState<Filters>({});
   const [lastUrl, setLastUrl] = useState("");
+  const [sheetUrls, setSheetUrls] = useState<string[]>([]);
+  const [layout, setLayout] = useState<DashboardLayout | null>(null);
+  const [syncStatus, setSyncStatus] = useState<LayoutSyncStatus>("synced");
+  const [linkCopied, setLinkCopied] = useState(false);
   const [heroCollapsed, setHeroCollapsed] = useState(true);
   const [showLinkEditor, setShowLinkEditor] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
+  const [overviewBuilderOpen, setOverviewBuilderOpen] = useState(false);
 
-  const loadSheet = useCallback(async (url: string) => {
-    setLoading(true);
-    setError(null);
-    setLastUrl(url);
-    setFilters({});
-    setShowLinkEditor(false);
-
-    try {
-      const res = await fetch("/api/sheet", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Gagal memuat data");
-      setError(null);
-      setSheetData(json);
-      setActiveView("overview");
-      setHeroCollapsed(true);
-      persistLastUrl(url);
-      syncSheetToUrl(url);
-      touchSavedSheet(url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Terjadi kesalahan");
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (activeView !== "overview") {
+      setOverviewBuilderOpen(false);
     }
+  }, [activeView]);
+
+  const initLayout = useCallback(async (data: SheetData, urls: string[]) => {
+    const remote = await fetchRemoteLayout(urls);
+    const base = remote
+      ? mergeLayoutWithData(remote, data)
+      : createDefaultLayout(urls, data);
+    setLayout({ ...base, sheetUrls: urls });
+    if (remote) syncLayoutKeyToUrl(getLayoutKey(urls));
   }, []);
+
+  const loadSheets = useCallback(
+    async (urls: string[], merge = false) => {
+      const unique = [...new Set(urls.filter(Boolean))];
+      if (unique.length === 0) return;
+
+      setLoading(true);
+      setError(null);
+      setLastUrl(unique[0]);
+      setSheetUrls(unique);
+      setFilters({});
+      setShowLinkEditor(false);
+
+      try {
+        const res = await fetch("/api/sheet", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            urls: unique,
+            merge: merge || unique.length > 1,
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Gagal memuat data");
+
+        setError(null);
+        setSheetData(json);
+        setActiveView("overview");
+        setHeroCollapsed(true);
+        persistLastUrl(unique[0]);
+        syncSheetToUrl(unique[0]);
+        touchSavedSheet(unique[0]);
+        await initLayout(json, unique);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Terjadi kesalahan");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [initLayout]
+  );
+
+  const loadSheet = useCallback(
+    (url: string) => loadSheets([url], false),
+    [loadSheets]
+  );
+
+  const { flushSave } = useLayoutAutoSave(layout, Boolean(layout), setSyncStatus);
+
+  const handleCopyLink = useCallback(async () => {
+    await flushSave();
+    const urls = sheetUrls.length ? sheetUrls : lastUrl ? [lastUrl] : [];
+    const ok = await copyDashboardShareUrl(urls);
+    if (ok) {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2500);
+    }
+  }, [sheetUrls, lastUrl, flushSave]);
 
   useEffect(() => {
     if (initRef.current) return;
@@ -102,12 +160,13 @@ export function DashboardApp() {
     [sheetData]
   );
 
-  const featuredChart = displayData?.charts.find((c) => c.featured) ?? displayData?.charts[0];
-
   const applyChatActions = useCallback(
     (actions: DashboardAction[]) => {
       if (!sheetData) return;
       const columns = sheetData.columns;
+      let needsReload = false;
+      let nextUrls = sheetUrls;
+      let nextMerge = layout?.mergeMode ?? false;
 
       for (const action of actions) {
         switch (action.type) {
@@ -134,10 +193,41 @@ export function DashboardApp() {
           case "clear_filters":
             setFilters({});
             break;
+          case "add_sheet":
+            if (!nextUrls.includes(action.url)) {
+              nextUrls = [...nextUrls, action.url];
+              nextMerge = true;
+              needsReload = true;
+            }
+            break;
+          case "remove_sheet":
+            nextUrls = nextUrls.filter((u) => u !== action.url);
+            needsReload = nextUrls.length > 0;
+            break;
+          case "set_merge_mode":
+            nextMerge = action.enabled;
+            needsReload = nextUrls.length > 1;
+            break;
+          case "reset_layout":
+            if (sheetData) {
+              setLayout(createDefaultLayout(sheetUrls, sheetData));
+            }
+            break;
+          default:
+            break;
         }
       }
+
+      if (layout) {
+        const nextLayout = applyLayoutActions(layout, actions, columns);
+        setLayout(nextLayout);
+      }
+
+      if (needsReload && nextUrls.length > 0) {
+        loadSheets(nextUrls, nextMerge);
+      }
     },
-    [sheetData]
+    [sheetData, sheetUrls, layout, loadSheets]
   );
 
   const renderView = () => {
@@ -145,32 +235,41 @@ export function DashboardApp() {
 
     switch (activeView) {
       case "overview":
+        if (!layout) return null;
         return (
-          <div className="space-y-6">
-            <KPICards metrics={displayData.kpis} />
-            <div className="grid gap-6 lg:grid-cols-5">
-              <div className="lg:col-span-3">
-                <HeroChart chart={featuredChart} />
-              </div>
-              <div className="lg:col-span-2">
-                <StatusDistribution items={displayData.distributions} />
-              </div>
-            </div>
-            <div className="grid gap-6 lg:grid-cols-2">
-              <TopRecords records={displayData.topRecords} />
-              <div className="glass-card rounded-2xl p-5">
-                <SectionHeader
-                  title="Grafik Ringkas"
-                  description="Preview visualisasi utama"
-                />
-                <div className="grid gap-4">
-                  {displayData.charts.slice(0, 2).map((chart) => (
-                    <ChartCard key={chart.id} chart={chart} />
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
+          <OverviewDashboard
+            data={displayData}
+            layout={layout}
+            sheetUrls={sheetUrls}
+            syncStatus={syncStatus}
+            linkCopied={linkCopied}
+            onBuilderOpenChange={setOverviewBuilderOpen}
+            onSaveLayout={setLayout}
+            onSaveNow={() => void flushSave()}
+            onResetLayout={() => {
+              if (sheetData) setLayout(createDefaultLayout(sheetUrls, sheetData));
+            }}
+            onCopyLink={() => void handleCopyLink()}
+            onAddSheet={(url) => {
+              const next = [...sheetUrls, url];
+              setSheetUrls(next);
+              setLayout((prev) =>
+                prev
+                  ? { ...prev, sheetUrls: next, mergeMode: true, updatedAt: new Date().toISOString() }
+                  : prev
+              );
+            }}
+            onRemoveSheet={(url) => {
+              const next = sheetUrls.filter((u) => u !== url);
+              setSheetUrls(next);
+              if (next.length) loadSheets(next, layout?.mergeMode);
+            }}
+            onToggleMerge={(enabled) => {
+              setLayout((prev) => (prev ? { ...prev, mergeMode: enabled } : prev));
+              if (sheetUrls.length > 1) loadSheets(sheetUrls, enabled);
+            }}
+            onReloadMerged={() => loadSheets(sheetUrls, true)}
+          />
         );
 
       case "charts":
@@ -298,7 +397,7 @@ export function DashboardApp() {
 
       {/* Compact header when data loaded */}
       {sheetData && (
-        <header className="sticky top-0 z-50 overflow-visible border-b border-white/10 bg-slate-950/80 backdrop-blur-xl">
+        <header className="layer-header sticky top-0 overflow-visible border-b border-white/10 bg-slate-950/80 backdrop-blur-xl">
           <div className="flex items-center justify-between gap-4 px-4 py-3 sm:px-6">
             <div className="flex items-center gap-3">
               <button
@@ -424,11 +523,13 @@ export function DashboardApp() {
             </div>
           </main>
 
-          {displayData && (
+          {displayData && layout && !overviewBuilderOpen && (
             <FloatingChatWidget
               data={displayData}
               activeView={activeView}
               filters={filters}
+              layout={layout}
+              sheetUrls={sheetUrls}
               onApplyActions={applyChatActions}
             />
           )}

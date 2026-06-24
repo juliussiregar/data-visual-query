@@ -2,31 +2,38 @@
 
 import { useState } from "react";
 import type { ChartConfig, ChartType } from "@/lib/types";
+import { ALL_CHART_TYPES } from "@/lib/types";
 import { ChartRenderer } from "./ChartRenderer";
 import { BarChart3, Maximize2, Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const CHART_TYPES: ChartType[] = [
-  "donut",
-  "pie",
-  "bar",
-  "horizontalBar",
-  "area",
-  "line",
-  "radial",
-];
 
 interface ChartCardProps {
   chart: ChartConfig;
   defaultLarge?: boolean;
   className?: string;
+  controlledType?: ChartType;
+  onTypeChange?: (type: ChartType) => void;
+  showTypePicker?: boolean;
+  compactPicker?: boolean;
 }
 
-export function ChartCard({ chart, defaultLarge, className }: ChartCardProps) {
-  const [chartType, setChartType] = useState<ChartType>(chart.type);
+export function ChartCard({
+  chart,
+  defaultLarge,
+  className,
+  controlledType,
+  onTypeChange,
+  showTypePicker = true,
+  compactPicker = false,
+}: ChartCardProps) {
+  const [internalType, setInternalType] = useState<ChartType>(chart.type);
   const [expanded, setExpanded] = useState(defaultLarge ?? false);
 
+  const chartType = controlledType ?? internalType;
+  const setChartType = onTypeChange ?? setInternalType;
   const activeChart = { ...chart, type: chartType };
+
+  const visibleTypes = compactPicker ? ALL_CHART_TYPES.slice(0, 6) : ALL_CHART_TYPES;
 
   return (
     <article
@@ -58,23 +65,25 @@ export function ChartCard({ chart, defaultLarge, className }: ChartCardProps) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <div className="flex rounded-lg border border-white/10 bg-slate-900/50 p-0.5">
-            {CHART_TYPES.slice(0, 4).map((t) => (
-              <button
-                key={t}
-                onClick={() => setChartType(t)}
-                title={t}
-                className={cn(
-                  "rounded-md px-2 py-1 text-[10px] font-medium capitalize transition-colors",
-                  chartType === t
-                    ? "bg-indigo-500/30 text-indigo-200"
-                    : "text-slate-500 hover:text-slate-300"
-                )}
-              >
-                {t === "horizontalBar" ? "H-Bar" : t}
-              </button>
-            ))}
-          </div>
+          {showTypePicker && (
+            <div className="flex max-w-[220px] flex-wrap justify-end gap-0.5 rounded-lg border border-white/10 bg-slate-900/50 p-0.5 sm:max-w-none">
+              {visibleTypes.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setChartType(t)}
+                  title={t}
+                  className={cn(
+                    "rounded-md px-1.5 py-1 text-[9px] font-medium capitalize transition-colors sm:px-2 sm:text-[10px]",
+                    chartType === t
+                      ? "bg-indigo-500/30 text-indigo-200"
+                      : "text-slate-500 hover:text-slate-300"
+                  )}
+                >
+                  {t === "horizontalBar" ? "H-Bar" : t === "stackedBar" ? "Stack" : t}
+                </button>
+              ))}
+            </div>
+          )}
           <button
             onClick={() => setExpanded(!expanded)}
             className="rounded-lg border border-white/10 p-2 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"

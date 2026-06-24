@@ -11,12 +11,21 @@ import {
   LayoutDashboard,
   Wand2,
   Zap,
+  History,
+  Trash2,
 } from "lucide-react";
-import type { ChatMessage, SheetData, ViewId } from "@/lib/types";
+import type { ChatMessage, SheetData, ViewId, DashboardLayout } from "@/lib/types";
 import type { DashboardAction, DashboardContext } from "@/lib/types";
 import { describeAction } from "@/lib/chat-actions";
 import { buildDataSummary } from "@/lib/analyzer";
 import { getFilterableColumns } from "@/lib/filters";
+import { widgetLabel } from "@/lib/layout";
+import {
+  CHAT_HISTORY_LIMIT,
+  clearChatHistory,
+  loadChatHistory,
+  saveChatHistory,
+} from "@/lib/chat-storage";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { cn } from "@/lib/utils";
 
@@ -61,6 +70,8 @@ interface ChatPanelProps {
   data: SheetData;
   activeView: ViewId;
   filters: Record<string, string>;
+  layout: DashboardLayout;
+  sheetUrls: string[];
   onApplyActions: (actions: DashboardAction[]) => void;
   onClose?: () => void;
 }
@@ -69,15 +80,21 @@ export function ChatPanel({
   data,
   activeView,
   filters,
+  layout,
+  sheetUrls,
   onApplyActions,
   onClose,
 }: ChatPanelProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const sheetKey = sheetUrls.length ? sheetUrls.join("||") : data.sourceUrl;
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    loadChatHistory(sheetUrls.length ? sheetUrls : [data.sourceUrl])
+  );
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const hasHistory = messages.length > 0;
 
   const dataSummary = buildDataSummary(data);
 
@@ -94,13 +111,34 @@ export function ChatPanel({
           ...new Set(data.rows.map((r) => r[col.key]?.trim()).filter(Boolean) as string[]),
         ].sort(),
       })),
-      chartTitles: data.charts.map((c) => c.title),
+      chartTitles: data.charts.map((c) => `${c.title} (id: ${c.id})`),
+      layoutWidgets: layout.widgets.map((w) => ({
+        id: w.id,
+        type: w.type,
+        visible: w.visible,
+        title: widgetLabel(w, data),
+      })),
+      sheetUrls,
+      mergeMode: layout.mergeMode,
+      editMode: false,
     };
-  }, [data, activeView, filters]);
+  }, [data, activeView, filters, layout, sheetUrls]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  useEffect(() => {
+    const urls = sheetUrls.length ? sheetUrls : [data.sourceUrl];
+    setMessages(loadChatHistory(urls));
+  }, [sheetKey, data.sourceUrl, sheetUrls]);
+
+  useEffect(() => {
+    const urls = sheetUrls.length ? sheetUrls : [data.sourceUrl];
+    if (messages.length > 0 && !loading) {
+      saveChatHistory(urls, messages);
+    }
+  }, [messages, loading, sheetUrls, data.sourceUrl]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -149,6 +187,13 @@ export function ChatPanel({
     [loading, messages, dataSummary, dashboardContext, onApplyActions]
   );
 
+  const handleClearHistory = () => {
+    const urls = sheetUrls.length ? sheetUrls : [data.sourceUrl];
+    clearChatHistory(urls);
+    setMessages([]);
+    setError(null);
+  };
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-gradient-to-b from-slate-900 to-slate-950">
       {/* Header */}
@@ -182,7 +227,26 @@ export function ChatPanel({
 
       {/* Messages */}
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
-        {messages.length === 0 && (
+        {hasHistory && (
+          <div className="flex items-center justify-between gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2">
+            <div className="flex items-center gap-2 text-[10px] text-slate-500">
+              <History className="h-3 w-3" />
+              <span>
+                {messages.length} pesan terakhir · maks. {CHAT_HISTORY_LIMIT}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleClearHistory}
+              className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] text-slate-500 transition-colors hover:bg-white/5 hover:text-slate-300"
+            >
+              <Trash2 className="h-3 w-3" />
+              Hapus
+            </button>
+          </div>
+        )}
+
+        {!hasHistory && (
           <div className="space-y-4">
             <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/5 p-4">
               <div className="mb-2 flex items-center gap-2">
@@ -211,6 +275,26 @@ export function ChatPanel({
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {hasHistory && (
+          <div className="grid grid-cols-2 gap-2">
+            {QUICK_PROMPTS.slice(0, 2).map((item) => (
+              <button
+                key={item.text}
+                type="button"
+                onClick={() => sendMessage(item.text)}
+                disabled={loading}
+                className={cn(
+                  "flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-2.5 py-2 text-left text-[10px] text-slate-400 transition-all disabled:opacity-50",
+                  item.color
+                )}
+              >
+                <item.icon className="h-3 w-3 shrink-0" />
+                <span className="line-clamp-2">{item.text}</span>
+              </button>
+            ))}
           </div>
         )}
 

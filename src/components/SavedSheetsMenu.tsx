@@ -132,7 +132,7 @@ export function SavedSheetsMenu({
     <div
       ref={dropdownRef}
       role="menu"
-      className="animate-fade-in fixed z-[9999] overflow-hidden rounded-2xl border border-white/15 bg-slate-950 shadow-2xl shadow-black/60 ring-1 ring-white/10"
+      className="layer-dropdown animate-fade-in fixed overflow-hidden rounded-2xl border border-white/15 bg-slate-950 shadow-2xl shadow-black/60 ring-1 ring-white/10"
       style={{
         top: position.top,
         left: position.left,
