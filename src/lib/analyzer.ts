@@ -1,3 +1,8 @@
+import { enrichColumns, buildDatasetMeta } from "./dataset-catalog";
+import { attachColumnLineage, buildLineageSummary } from "./lineage";
+import { runDataQualityChecks } from "./data-quality";
+import { aggregateData, CHART_COLORS } from "./aggregation";
+import { buildGenericMetrics } from "./generic-metrics";
 import { formatCurrency, formatNumber, parseNumber } from "./format";
 import type {
   ChartConfig,
@@ -11,19 +16,6 @@ import type {
   SheetData,
   TopRecord,
 } from "./types";
-
-export const CHART_COLORS = [
-  "#6366f1",
-  "#8b5cf6",
-  "#06b6d4",
-  "#10b981",
-  "#f59e0b",
-  "#ef4444",
-  "#ec4899",
-  "#14b8a6",
-  "#f97316",
-  "#84cc16",
-];
 
 const STATUS_COLORS: Record<string, string> = {
   akad: "#10b981",
@@ -54,7 +46,8 @@ function detectColumnType(values: string[]): ColumnType {
   const dateCount = nonEmpty.filter((v) =>
     /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(v)
   ).length;
-  if (dateCount / nonEmpty.length >= 0.6) return "date";
+  const isoDateCount = nonEmpty.filter((v) => /^\d{4}-\d{2}-\d{2}/.test(v)).length;
+  if ((dateCount + isoDateCount) / nonEmpty.length >= 0.6) return "date";
 
   const unique = new Set(nonEmpty.map((v) => v.toLowerCase())).size;
   if (unique <= Math.max(20, nonEmpty.length * 0.5)) return "category";
@@ -79,52 +72,6 @@ function analyzeColumns(rows: Record<string, string>[]): ColumnMeta[] {
       fillRate: Math.round((values.length / rows.length) * 100),
     };
   });
-}
-
-export function aggregateData(
-  rows: Record<string, string>[],
-  categoryKey: string,
-  valueKey: string | undefined,
-  aggregation: "count" | "sum" | "avg"
-): ChartDataPoint[] {
-  const map = new Map<string, { sum: number; count: number }>();
-
-  for (const row of rows) {
-    const category = row[categoryKey]?.trim() || "Tidak ada";
-    const existing = map.get(category) ?? { sum: 0, count: 0 };
-
-    if (aggregation === "count") {
-      existing.count += 1;
-    } else if (valueKey) {
-      const num = parseNumber(row[valueKey]);
-      if (num !== null) {
-        existing.sum += num;
-        existing.count += 1;
-      }
-    }
-    map.set(category, existing);
-  }
-
-  const points: ChartDataPoint[] = [];
-  let i = 0;
-  for (const [name, { sum, count }] of map.entries()) {
-    let value = count;
-    if (aggregation === "sum") value = sum;
-    if (aggregation === "avg") value = count > 0 ? sum / count : 0;
-    points.push({
-      name,
-      value,
-      fill: colorForLabel(name, i),
-    });
-    i += 1;
-  }
-
-  const sorted = points.sort((a, b) => b.value - a.value);
-  const total = sorted.reduce((s, p) => s + p.value, 0);
-  return sorted.map((p) => ({
-    ...p,
-    percentage: total > 0 ? (p.value / total) * 100 : 0,
-  }));
 }
 
 function pickChartType(uniqueCount: number, index: number): ChartType {
@@ -280,24 +227,13 @@ function generateKpis(
   if (statusCol) {
     const counts = aggregateData(rows, statusCol.key, undefined, "count");
     const top = counts[0];
-    const akad = counts.find((c) => c.name.toLowerCase().includes("akad"));
     if (top) {
       kpis.push({
         id: "top-status",
-        label: "Status Terbanyak",
+        label: `Terbanyak: ${statusCol.label}`,
         value: top.name,
-        sublabel: `${formatNumber(top.value)} berkas (${top.percentage?.toFixed(0)}%)`,
+        sublabel: `${formatNumber(top.value)} baris (${top.percentage?.toFixed(0)}%)`,
         icon: "chart",
-      });
-    }
-    if (akad && rows.length > 0) {
-      kpis.push({
-        id: "akad-rate",
-        label: "Tingkat Akad",
-        value: `${akad.percentage?.toFixed(1)}%`,
-        sublabel: `${formatNumber(akad.value)} berkas selesai`,
-        icon: "users",
-        trend: "up",
       });
     }
   }
@@ -459,17 +395,48 @@ function generateTopRecords(
 export function analyzeSheetData(
   rows: Record<string, string>[],
   sourceUrl: string,
-  fetchedAt?: string
+  fetchedAt?: string,
+  options?: { mergeMode?: boolean; joinMode?: boolean }
 ): SheetData {
-  const columns = analyzeColumns(rows);
-  const charts = generateCharts(rows, columns);
-  const kpis = generateKpis(rows, columns);
-  const insights = generateInsights(rows, columns);
-  const distributions = generateDistributions(rows, columns);
-  const topRecords = generateTopRecords(rows, columns);
+  const enrichedRows = rows;
+
+  const baseColumns = analyzeColumns(enrichedRows);
+  const enriched = enrichColumns(baseColumns, enrichedRows);
+  const columns = attachColumnLineage(enriched, {
+    sourceUrl,
+    mergeMode: options?.mergeMode,
+    joinMode: options?.joinMode,
+  });
+  const at = fetchedAt ?? new Date().toISOString();
+  const quality = runDataQualityChecks(enrichedRows, columns);
+  const dataset = {
+    ...buildDatasetMeta(enrichedRows, columns, sourceUrl, at, options?.mergeMode),
+    quality,
+    lineageSummary: buildLineageSummary(columns, {
+      sourceUrl,
+      mergeMode: options?.mergeMode,
+      joinMode: options?.joinMode,
+    }),
+  };
+
+  let metricDefinitions = undefined;
+  let metricValues = undefined;
+
+  if (!options?.mergeMode) {
+    const generic = buildGenericMetrics(columns, enrichedRows);
+    metricDefinitions = generic.definitions;
+    metricValues = generic.values;
+  }
+
+  const charts = generateCharts(enrichedRows, columns);
+  const kpis = generateKpis(enrichedRows, columns);
+  const insights = generateInsights(enrichedRows, columns);
+
+  const distributions = generateDistributions(enrichedRows, columns);
+  const topRecords = generateTopRecords(enrichedRows, columns);
 
   return {
-    rows,
+    rows: enrichedRows,
     columns,
     charts,
     kpis,
@@ -477,7 +444,10 @@ export function analyzeSheetData(
     distributions,
     topRecords,
     sourceUrl,
-    fetchedAt: fetchedAt ?? new Date().toISOString(),
+    fetchedAt: at,
+    dataset,
+    metrics: metricDefinitions,
+    metricValues,
   };
 }
 
@@ -485,12 +455,26 @@ export function buildDataSummary(data: SheetData): string {
   const columnSummary = data.columns
     .map(
       (c) =>
-        `- ${c.label} (${c.type}, ${c.uniqueCount} unik, fill ${c.fillRate}%, contoh: ${c.sampleValues.join(", ")})`
+        `- ${c.businessLabel ?? c.label} [${c.semanticRole ?? c.type}]${c.sensitive ? " (PII)" : ""}: ${c.type}, ${c.uniqueCount} unik, fill ${c.fillRate}%, null ${c.nullCount ?? 0}, contoh: ${c.sampleValues.join(", ")}`
     )
     .join("\n");
 
   const sampleRows = data.rows.slice(0, 15);
   const sampleJson = JSON.stringify(sampleRows, null, 2);
 
-  return `Kolom:\n${columnSummary}\n\nJumlah baris: ${data.rows.length}\nKPI: ${data.kpis.map((k) => `${k.label}: ${k.value}`).join(", ")}\nInsights: ${data.insights.map((i) => i.title).join("; ")}\n\nSample data (15 baris pertama):\n${sampleJson}`;
+  const ds = data.dataset;
+  const datasetBlock = ds
+    ? `Dataset: ${ds.name}\nSumber: ${ds.sourceType}\nFreshness: ${ds.freshness.label}\nProfil: ${ds.profile.rowCount} baris, ${ds.profile.dimensionCount} dimension, ${ds.profile.measureCount} measure, ${ds.profile.sensitiveFieldCount} field sensitif\n`
+    : "";
+
+  const metricsBlock =
+    data.metrics && data.metrics.length > 0
+      ? `Metrics terdeteksi:\n${data.metrics.map((m) => `- ${m.name}: ${m.formula}`).join("\n")}\n`
+      : "";
+
+  const valuesBlock = data.metricValues
+    ? `Nilai Metric Saat Ini: ${JSON.stringify(data.metricValues)}\n`
+    : "";
+
+  return `${datasetBlock}${metricsBlock}${valuesBlock}Kolom:\n${columnSummary}\n\nJumlah baris: ${data.rows.length}\nKPI: ${data.kpis.map((k) => `${k.label}: ${k.value}${k.formula ? ` [${k.formula}]` : ""}`).join(", ")}\nInsights: ${data.insights.map((i) => i.title).join("; ")}\n\nSample data (15 baris pertama):\n${sampleJson}`;
 }

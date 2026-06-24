@@ -20,7 +20,23 @@ export function reanalyze(
   filters: Filters
 ): SheetData {
   const filtered = applyFilters(base.rows, filters);
-  return analyzeSheetData(filtered, base.sourceUrl, base.fetchedAt);
+  const hasFilters = Object.values(filters).some(Boolean);
+  const result = analyzeSheetData(filtered, base.sourceUrl, base.fetchedAt);
+
+  if (base.dataset && hasFilters) {
+    result.dataset = {
+      ...base.dataset,
+      profile: {
+        ...base.dataset.profile,
+        rowCount: base.rows.length,
+        filteredRowCount: filtered.length,
+      },
+    };
+  } else if (base.dataset) {
+    result.dataset = base.dataset;
+  }
+
+  return result;
 }
 
 export function getFilterableColumns(data: SheetData) {

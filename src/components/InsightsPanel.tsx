@@ -11,17 +11,17 @@ const ICONS = {
 };
 
 const STYLES = {
-  info: "border-cyan-500/20 bg-cyan-500/5",
-  success: "border-emerald-500/20 bg-emerald-500/5",
-  warning: "border-amber-500/20 bg-amber-500/5",
-  highlight: "border-indigo-500/20 bg-indigo-500/5",
+  info: "border-l-cyan-500",
+  success: "border-l-emerald-500",
+  warning: "border-l-amber-500",
+  highlight: "border-l-indigo-500",
 };
 
 const ICON_COLORS = {
-  info: "text-cyan-400",
-  success: "text-emerald-400",
-  warning: "text-amber-400",
-  highlight: "text-indigo-400",
+  info: "text-cyan-600",
+  success: "text-emerald-600",
+  warning: "text-amber-600",
+  highlight: "text-indigo-600",
 };
 
 interface InsightsPanelProps {
@@ -33,34 +33,34 @@ export function InsightsPanel({ insights }: InsightsPanelProps) {
     <div>
       <SectionHeader
         title="Insight Otomatis"
-        description="Ringkasan analisis yang digenerate dari pola data"
+        description="Ringkasan analisis dari pola data di sheet Anda"
       />
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2">
         {insights.map((insight, i) => {
           const Icon = ICONS[insight.type];
           return (
             <article
               key={insight.id}
               className={cn(
-                "animate-fade-in-up rounded-2xl border p-5 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg",
+                "surface-card animate-fade-in-up border-l-[3px] p-4 transition-shadow hover:shadow-[var(--shadow-card-hover)]",
                 STYLES[insight.type],
                 `stagger-${Math.min(i + 1, 6)}`
               )}
             >
-              <div className="flex gap-4">
+              <div className="flex gap-3">
                 <div className={cn("mt-0.5 shrink-0", ICON_COLORS[insight.type])}>
-                  <Icon className="h-5 w-5" />
+                  <Icon className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-semibold text-white">{insight.title}</h3>
+                    <h3 className="text-sm font-semibold text-slate-900">{insight.title}</h3>
                     {insight.metric && (
-                      <span className="shrink-0 rounded-lg bg-white/10 px-2 py-0.5 text-xs font-bold text-white">
+                      <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-700">
                         {insight.metric}
                       </span>
                     )}
                   </div>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                  <p className="mt-1.5 text-sm leading-relaxed text-slate-500">
                     {insight.description}
                   </p>
                 </div>

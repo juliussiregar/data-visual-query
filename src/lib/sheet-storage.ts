@@ -131,3 +131,40 @@ export function truncateUrl(url: string, max = 48): string {
   if (url.length <= max) return url;
   return `${url.slice(0, max)}…`;
 }
+
+export async function fetchSavedSheets(): Promise<SavedSheet[]> {
+  try {
+    const res = await fetch("/api/user/sheets");
+    if (!res.ok) return [];
+    const json = await res.json();
+    return json.sheets ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveSheetRemote(url: string, label?: string): Promise<SavedSheet | null> {
+  try {
+    const res = await fetch("/api/user/sheets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, label }),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.sheet ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function removeSavedSheetRemote(id: string): Promise<boolean> {
+  const res = await fetch(`/api/user/sheets?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  return res.ok;
+}
+
+export async function touchSavedSheetRemote(url: string) {
+  await saveSheetRemote(url);
+}

@@ -46,6 +46,22 @@ interface ChartRendererProps {
   chart: ChartConfig;
   className?: string;
   large?: boolean;
+  /** Klik segmen grafik → filter dimensi kategori */
+  onDrillDown?: (categoryValue: string) => void;
+}
+
+function pickDrillName(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const name = (payload as { name?: string }).name;
+  return name?.trim() ? name : null;
+}
+
+function handleDrillClick(
+  onDrillDown: ChartRendererProps["onDrillDown"],
+  payload: unknown
+) {
+  const name = pickDrillName(payload);
+  if (name && onDrillDown) onDrillDown(name);
 }
 
 function CustomTooltip({
@@ -64,9 +80,9 @@ function CustomTooltip({
   const name = item.name ?? label;
   const value = payload[0].value;
   return (
-    <div className="rounded-xl border border-white/10 bg-slate-900/95 px-3 py-2 shadow-xl backdrop-blur-md">
+    <div className="rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 shadow-xl backdrop-blur-md">
       <p className="text-xs text-slate-400">{name}</p>
-      <p className="text-sm font-semibold text-white">
+      <p className="text-sm font-semibold text-slate-900">
         {isCurrency ? formatCurrency(value) : formatNumber(value)}
       </p>
       {item.percentage !== undefined && (
@@ -76,10 +92,11 @@ function CustomTooltip({
   );
 }
 
-export function ChartRenderer({ chart, className, large }: ChartRendererProps) {
+export function ChartRenderer({ chart, className, large, onDrillDown }: ChartRendererProps) {
   const { type, data, aggregation, valueKey } = chart;
   const isCurrency = aggregation !== "count" && !!valueKey;
   const gradientId = `area-${chart.id}`;
+  const drillCursor = onDrillDown ? "pointer" : "default";
 
   if (data.length === 0) {
     return (
@@ -111,6 +128,11 @@ export function ChartRenderer({ chart, className, large }: ChartRendererProps) {
               innerRadius={type === "donut" ? (large ? 70 : 55) : 0}
               outerRadius={large ? 120 : 90}
               paddingAngle={2}
+              style={{ cursor: drillCursor }}
+              onClick={(_, index) => {
+                const point = data[index ?? 0];
+                if (point?.name) onDrillDown?.(point.name);
+              }}
               label={({ name, percent }) => {
                 const label = name ?? "";
                 return `${label.length > 12 ? `${label.slice(0, 12)}…` : label} (${((percent ?? 0) * 100).toFixed(0)}%)`;
@@ -138,7 +160,7 @@ export function ChartRenderer({ chart, className, large }: ChartRendererProps) {
             endAngle={0}
           >
             <RadialBar
-              background={{ fill: "rgba(255,255,255,0.05)" }}
+              background={{ fill: "rgba(226,232,240,0.6)" }}
               dataKey="value"
               cornerRadius={6}
             >
@@ -154,17 +176,17 @@ export function ChartRenderer({ chart, className, large }: ChartRendererProps) {
       case "horizontalBar":
         return (
           <BarChart data={data} layout="vertical" margin={{ left: 8, right: 16 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
-            <XAxis type="number" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.3} />
+            <XAxis type="number" tick={{ fill: "#64748b", fontSize: 11 }} />
             <YAxis
               type="category"
               dataKey="name"
               width={110}
-              tick={{ fill: "#94a3b8", fontSize: 11 }}
+              tick={{ fill: "#64748b", fontSize: 11 }}
               tickFormatter={(v: string) => (v.length > 14 ? `${v.slice(0, 14)}…` : v)}
             />
             <Tooltip content={<CustomTooltip isCurrency={isCurrency} />} />
-            <Bar dataKey="value" radius={[0, 6, 6, 0]}>
+            <Bar dataKey="value" radius={[0, 6, 6, 0]} style={{ cursor: drillCursor }} onClick={(d) => handleDrillClick(onDrillDown, d)}>
               {data.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.fill} />
               ))}
@@ -175,16 +197,18 @@ export function ChartRenderer({ chart, className, large }: ChartRendererProps) {
       case "line":
         return (
           <LineChart data={data} margin={{ left: 0, right: 16 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
-            <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-            <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.3} />
+            <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 11 }} />
+            <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
             <Tooltip content={<CustomTooltip isCurrency={isCurrency} />} />
             <Line
               type="monotone"
               dataKey="value"
               stroke="#6366f1"
               strokeWidth={2}
-              dot={{ fill: "#6366f1", r: 4 }}
+              dot={{ fill: "#6366f1", r: 4, cursor: drillCursor }}
+              activeDot={{ r: 6, cursor: drillCursor }}
+              onClick={(data) => handleDrillClick(onDrillDown, data)}
             />
           </LineChart>
         );
@@ -198,9 +222,9 @@ export function ChartRenderer({ chart, className, large }: ChartRendererProps) {
                 <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
-            <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-            <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.3} />
+            <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 11 }} />
+            <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
             <Tooltip content={<CustomTooltip isCurrency={isCurrency} />} />
             <Area
               type="monotone"
@@ -215,15 +239,15 @@ export function ChartRenderer({ chart, className, large }: ChartRendererProps) {
       case "stackedBar":
         return (
           <BarChart data={data} margin={{ left: 0, right: 16 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.3} />
             <XAxis
               dataKey="name"
-              tick={{ fill: "#94a3b8", fontSize: 11 }}
+              tick={{ fill: "#64748b", fontSize: 11 }}
               tickFormatter={(v: string) => (v.length > 10 ? `${v.slice(0, 10)}…` : v)}
             />
-            <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+            <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
             <Tooltip content={<CustomTooltip isCurrency={isCurrency} />} />
-            <Bar dataKey="value" stackId="a" radius={[6, 6, 0, 0]}>
+            <Bar dataKey="value" stackId="a" radius={[6, 6, 0, 0]} style={{ cursor: drillCursor }} onClick={(d) => handleDrillClick(onDrillDown, d)}>
               {data.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.fill} />
               ))}
@@ -234,9 +258,9 @@ export function ChartRenderer({ chart, className, large }: ChartRendererProps) {
       case "scatter":
         return (
           <ScatterChart margin={{ left: 0, right: 16 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
-            <XAxis type="number" dataKey="x" name="urutan" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-            <YAxis type="number" dataKey="y" name="nilai" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.3} />
+            <XAxis type="number" dataKey="x" name="urutan" tick={{ fill: "#64748b", fontSize: 11 }} />
+            <YAxis type="number" dataKey="y" name="nilai" tick={{ fill: "#64748b", fontSize: 11 }} />
             <ZAxis type="number" dataKey="z" range={[80, 400]} />
             <Tooltip
               cursor={{ strokeDasharray: "3 3" }}
@@ -244,9 +268,9 @@ export function ChartRenderer({ chart, className, large }: ChartRendererProps) {
                 if (!active || !payload?.length) return null;
                 const item = payload[0].payload as { name: string; value: number };
                 return (
-                  <div className="rounded-xl border border-white/10 bg-slate-900/95 px-3 py-2 shadow-xl">
+                  <div className="rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 shadow-xl">
                     <p className="text-xs text-slate-400">{item.name}</p>
-                    <p className="text-sm font-semibold text-white">
+                    <p className="text-sm font-semibold text-slate-900">
                       {isCurrency ? formatCurrency(item.value) : formatNumber(item.value)}
                     </p>
                   </div>
@@ -290,8 +314,8 @@ export function ChartRenderer({ chart, className, large }: ChartRendererProps) {
       case "radar":
         return (
           <RadarChart data={data} cx="50%" cy="50%" outerRadius={large ? 120 : 90}>
-            <PolarGrid stroke="#334155" />
-            <PolarAngleAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 10 }} />
+            <PolarGrid stroke="#e2e8f0" />
+            <PolarAngleAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 10 }} />
             <PolarRadiusAxis tick={{ fill: "#64748b", fontSize: 9 }} />
             <Radar dataKey="value" stroke="#6366f1" fill="#6366f1" fillOpacity={0.35} />
             <Tooltip content={<CustomTooltip isCurrency={isCurrency} />} />
@@ -301,15 +325,15 @@ export function ChartRenderer({ chart, className, large }: ChartRendererProps) {
       case "composed":
         return (
           <ComposedChart data={data} margin={{ left: 0, right: 16 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.3} />
             <XAxis
               dataKey="name"
-              tick={{ fill: "#94a3b8", fontSize: 11 }}
+              tick={{ fill: "#64748b", fontSize: 11 }}
               tickFormatter={(v: string) => (v.length > 10 ? `${v.slice(0, 10)}…` : v)}
             />
-            <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+            <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
             <Tooltip content={<CustomTooltip isCurrency={isCurrency} />} />
-            <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+            <Bar dataKey="value" radius={[4, 4, 0, 0]} style={{ cursor: drillCursor }} onClick={(d) => handleDrillClick(onDrillDown, d)}>
               {data.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.fill} />
               ))}
@@ -322,15 +346,15 @@ export function ChartRenderer({ chart, className, large }: ChartRendererProps) {
       default:
         return (
           <BarChart data={data} margin={{ left: 0, right: 16 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.3} />
             <XAxis
               dataKey="name"
-              tick={{ fill: "#94a3b8", fontSize: 11 }}
+              tick={{ fill: "#64748b", fontSize: 11 }}
               tickFormatter={(v: string) => (v.length > 10 ? `${v.slice(0, 10)}…` : v)}
             />
-            <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+            <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
             <Tooltip content={<CustomTooltip isCurrency={isCurrency} />} />
-            <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+            <Bar dataKey="value" radius={[6, 6, 0, 0]} style={{ cursor: drillCursor }} onClick={(d) => handleDrillClick(onDrillDown, d)}>
               {data.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.fill} />
               ))}

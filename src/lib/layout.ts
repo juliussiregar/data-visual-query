@@ -15,6 +15,9 @@ export function hashLayoutKey(key: string): string {
 }
 
 export function createDefaultLayout(sheetUrls: string[], data: SheetData): DashboardLayout {
+  const featuredChart =
+    data.charts.find((c) => c.featured)?.id ?? data.charts[0]?.id;
+
   const widgets: WidgetConfig[] = [
     { id: "widget-kpis", type: "kpis", visible: true, order: 0, span: 3 },
     {
@@ -23,7 +26,7 @@ export function createDefaultLayout(sheetUrls: string[], data: SheetData): Dashb
       visible: true,
       order: 1,
       span: 2,
-      chartId: data.charts.find((c) => c.featured)?.id ?? data.charts[0]?.id,
+      chartId: featuredChart,
     },
     { id: "widget-distribution", type: "distribution", visible: true, order: 2, span: 1 },
     { id: "widget-top-records", type: "top_records", visible: true, order: 3, span: 1 },
@@ -46,11 +49,27 @@ export function createDefaultLayout(sheetUrls: string[], data: SheetData): Dashb
     });
   });
 
+  const defaultVisible = new Set([
+    "widget-kpis",
+    "widget-hero-chart",
+    "widget-insights",
+    ...(data.distributions.length > 0 ? ["widget-distribution"] : []),
+    ...widgets
+      .filter((w) => w.type === "chart" && w.chartId?.startsWith("metric-"))
+      .slice(0, 1)
+      .map((w) => w.id),
+  ]);
+
   return {
     version: 1,
     sheetUrls,
     mergeMode: sheetUrls.length > 1,
-    widgets: widgets.sort((a, b) => a.order - b.order).map((w) => ({ ...w, visible: false })),
+    widgets: widgets
+      .sort((a, b) => a.order - b.order)
+      .map((w) => ({
+        ...w,
+        visible: defaultVisible.has(w.id),
+      })),
     updatedAt: new Date().toISOString(),
   };
 }
@@ -226,6 +245,16 @@ export const LAYOUT_TEMPLATES: {
     description: "Visual menonjol untuk meeting",
   },
 ];
+
+export function suggestLayoutTemplate(data: SheetData): LayoutTemplateId {
+  const chartCount = data.charts.length;
+  const hasDistribution = data.distributions.length > 0;
+  const hasInsights = data.insights.length >= 2;
+
+  if (chartCount >= 4) return "presentasi";
+  if (hasDistribution && hasInsights && chartCount >= 2) return "manajemen";
+  return "ringkas";
+}
 
 export function applyLayoutTemplate(
   templateId: LayoutTemplateId,

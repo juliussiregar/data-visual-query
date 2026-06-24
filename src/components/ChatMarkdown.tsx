@@ -5,7 +5,7 @@ function formatInline(text: string): React.ReactNode[] {
   return parts.map((part, i) => {
     if (part.startsWith("**") && part.endsWith("**")) {
       return (
-        <strong key={i} className="font-semibold text-white">
+        <strong key={i} className="font-semibold text-slate-900">
           {part.slice(2, -2)}
         </strong>
       );
@@ -14,7 +14,7 @@ function formatInline(text: string): React.ReactNode[] {
       return (
         <code
           key={i}
-          className="rounded bg-white/10 px-1 py-0.5 text-xs text-indigo-200"
+          className="rounded bg-slate-100 px-1 py-0.5 text-xs text-indigo-700"
         >
           {part.slice(1, -1)}
         </code>

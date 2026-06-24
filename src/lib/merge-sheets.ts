@@ -29,7 +29,8 @@ export function mergeSheetDataSet(datasets: SheetData[]): SheetData {
   }
 
   const sourceUrls = datasets.map((d) => d.sourceUrl).join(" | ");
-  return analyzeSheetData(mergedRows, sourceUrls);
+  const fetchedAt = datasets[0]?.fetchedAt ?? new Date().toISOString();
+  return analyzeSheetData(mergedRows, sourceUrls, fetchedAt, { mergeMode: true });
 }
 
 function deriveSheetShortLabel(url: string): string {

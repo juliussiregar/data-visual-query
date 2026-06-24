@@ -2,10 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { DashboardLayout, SheetData, WidgetConfig } from "@/lib/types";
+import type { LayoutTemplateId } from "@/lib/layout";
 import { getVisibleWidgets } from "@/lib/layout";
 import { buildOverviewRows } from "@/lib/overview-layout";
 import { resolveChartForWidget } from "@/lib/chart-builder";
 import type { LayoutSyncStatus } from "@/hooks/useLayoutAutoSave";
+import type { Filters } from "@/lib/filters";
 import { KPICards } from "./KPICards";
 import { ChartCard } from "./ChartCard";
 import { StatusDistribution } from "./StatusDistribution";
@@ -13,8 +15,11 @@ import { TopRecords } from "./TopRecords";
 import { InsightsPanel } from "./InsightsPanel";
 import { HeroChart } from "./HeroChart";
 import { LayoutEditToolbar } from "./LayoutEditToolbar";
+import { LayoutTemplateBar } from "./LayoutTemplateBar";
 import { DashboardBuilderModal } from "./DashboardBuilderModal";
 import { OverviewHeader } from "./OverviewHeader";
+import { DatasetCatalogPanel } from "./DatasetCatalogPanel";
+import { MetricsLibraryPanel } from "./MetricsLibraryPanel";
 import { cn } from "@/lib/utils";
 import { LayoutDashboard, Pencil, Plus } from "lucide-react";
 
@@ -24,6 +29,11 @@ interface OverviewDashboardProps {
   sheetUrls: string[];
   syncStatus: LayoutSyncStatus;
   linkCopied: boolean;
+  filters?: Filters;
+  distributionColumnKey?: string;
+  activeTemplate?: LayoutTemplateId | null;
+  onDrillDown?: (columnKey: string, value: string) => void;
+  onApplyTemplate?: (templateId: LayoutTemplateId) => void;
   onBuilderOpenChange?: (open: boolean) => void;
   onSaveLayout: (layout: DashboardLayout) => void;
   onSaveNow: () => void;
@@ -41,6 +51,11 @@ export function OverviewDashboard({
   sheetUrls,
   syncStatus,
   linkCopied,
+  filters = {},
+  distributionColumnKey,
+  activeTemplate,
+  onDrillDown,
+  onApplyTemplate,
   onBuilderOpenChange,
   onSaveLayout,
   onSaveNow,
@@ -69,6 +84,9 @@ export function OverviewDashboard({
 
   const openBuilder = () => setBuilderOpen(true);
 
+  const chartDrill = (chart: { categoryKey: string }) =>
+    onDrillDown ? (value: string) => onDrillDown(chart.categoryKey, value) : undefined;
+
   const renderWidgetContent = (widget: WidgetConfig) => {
     switch (widget.type) {
       case "kpis":
@@ -76,15 +94,25 @@ export function OverviewDashboard({
       case "hero_chart": {
         const chart = resolveChartForWidget(data, widget);
         if (!chart) return null;
-        return <HeroChart chart={chart} />;
+        return <HeroChart chart={chart} onDrillDown={chartDrill(chart)} />;
       }
       case "distribution":
-        return <StatusDistribution items={data.distributions} />;
+        return (
+          <StatusDistribution
+            items={data.distributions}
+            onDrillDown={
+              distributionColumnKey && onDrillDown
+                ? (value) => onDrillDown(distributionColumnKey, value)
+                : undefined
+            }
+            activeValue={distributionColumnKey ? filters[distributionColumnKey] : undefined}
+          />
+        );
       case "top_records":
         return <TopRecords records={data.topRecords} />;
       case "insights":
         return (
-          <div className="glass-card rounded-2xl p-5">
+          <div className="surface-card p-5">
             <InsightsPanel insights={data.insights} />
           </div>
         );
@@ -97,6 +125,7 @@ export function OverviewDashboard({
             controlledType={widget.chartType}
             showTypePicker
             compactPicker
+            onDrillDown={chartDrill(chart)}
           />
         );
       }
@@ -130,7 +159,7 @@ export function OverviewDashboard({
       if (row.kind === "hero-pair") {
         const [hero, dist] = row.widgets;
         return (
-          <div key={`row-${rowIdx}`} className="grid gap-6 lg:grid-cols-5">
+          <div key={`row-${rowIdx}`} className="grid gap-4 lg:grid-cols-5">
             <div className="lg:col-span-3">{renderWidget(hero, anim++)}</div>
             <div className="lg:col-span-2">{renderWidget(dist, anim++)}</div>
           </div>
@@ -138,7 +167,7 @@ export function OverviewDashboard({
       }
       const [a, b] = row.widgets;
       return (
-        <div key={`row-${rowIdx}`} className="grid gap-6 lg:grid-cols-2">
+        <div key={`row-${rowIdx}`} className="grid gap-4 lg:grid-cols-2">
           {renderWidget(a, anim++)}
           {renderWidget(b, anim++)}
         </div>
@@ -155,7 +184,21 @@ export function OverviewDashboard({
         onCopyLink={onCopyLink}
       />
 
-      <div className="space-y-6">
+      <div className="space-y-5">
+        {data.dataset && <DatasetCatalogPanel dataset={data.dataset} />}
+
+        {data.metrics && data.metrics.length > 0 && (
+          <MetricsLibraryPanel metrics={data.metrics} values={data.metricValues} />
+        )}
+
+        {onApplyTemplate && (
+          <LayoutTemplateBar
+            data={data}
+            activeTemplate={activeTemplate}
+            onApply={onApplyTemplate}
+          />
+        )}
+
         {visible.length > 0 && (
           <OverviewHeader
             data={data}
@@ -166,31 +209,27 @@ export function OverviewDashboard({
         )}
 
         {layout.mergeMode && sheetUrls.length > 1 && (
-          <div className="flex items-center gap-2 rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-2.5 text-xs text-cyan-200">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-cyan-400" />
-            {sheetUrls.length} Google Sheet digabung · {data.rows.length} baris total
+          <div className="flex items-center gap-2 rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs text-cyan-800">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-cyan-500" />
+            {sheetUrls.length} sheet digabung · {data.rows.length.toLocaleString("id-ID")} baris
           </div>
         )}
 
         {visible.length === 0 ? (
           <div className="overview-empty">
-            <div className="relative">
-              <div className="absolute -inset-4 rounded-full bg-indigo-500/20 blur-2xl" />
-              <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-500/15 ring-1 ring-indigo-500/30">
-                <LayoutDashboard className="h-10 w-10 text-indigo-400" />
-              </div>
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50">
+              <LayoutDashboard className="h-8 w-8 text-indigo-500" />
             </div>
-            <h3 className="mt-6 text-xl font-semibold text-white">Dashboard masih kosong</h3>
-            <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-slate-400">
-              Pilih widget dari builder — setiap widget punya siluet pratinjau supaya mudah
-              dibayangkan sebelum ditambahkan.
+            <h3 className="mt-5 text-lg font-semibold text-slate-900">Dashboard masih kosong</h3>
+            <p className="mx-auto mt-2 max-w-sm text-sm text-slate-500">
+              Pilih template atau tambah widget dari builder.
             </p>
             <button
               type="button"
               onClick={openBuilder}
-              className="mt-8 inline-flex items-center gap-2 rounded-xl bg-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-xl shadow-indigo-500/30 transition-all hover:bg-indigo-400 hover:shadow-indigo-500/40"
+              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500"
             >
-              <Plus className="h-5 w-5" />
+              <Plus className="h-4 w-4" />
               Mulai Atur Dashboard
             </button>
           </div>
@@ -199,12 +238,11 @@ export function OverviewDashboard({
         )}
       </div>
 
-      {/* FAB edit saat sudah ada widget */}
       {visible.length > 0 && !builderOpen && (
         <button
           type="button"
           onClick={openBuilder}
-          className="layer-chat fixed bottom-24 right-6 flex items-center gap-2 rounded-full bg-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-xl shadow-indigo-500/40 transition-all hover:scale-105 hover:bg-indigo-400 sm:bottom-8"
+          className="layer-chat fixed bottom-24 right-6 flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition-all hover:bg-indigo-500 sm:bottom-8"
         >
           <Pencil className="h-4 w-4" />
           <span className="hidden sm:inline">Atur</span>

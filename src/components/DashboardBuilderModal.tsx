@@ -192,7 +192,7 @@ function BuilderDialog({
     >
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-slate-950/85 backdrop-blur-md animate-fade-in"
+        className="absolute inset-0 bg-white/85 backdrop-blur-md animate-fade-in"
         onClick={onClose}
         aria-hidden
       />
@@ -202,24 +202,24 @@ function BuilderDialog({
         role="dialog"
         aria-modal="true"
         aria-label="Atur dashboard"
-        className="layer-modal-panel chat-pop-in relative flex max-h-[min(92vh,900px)] w-full max-w-5xl flex-col overflow-hidden rounded-t-3xl border border-white/15 bg-slate-950 shadow-2xl shadow-black/60 sm:rounded-3xl"
+        className="layer-modal-panel chat-pop-in relative flex max-h-[min(92vh,900px)] w-full max-w-5xl flex-col overflow-hidden rounded-t-3xl border border-slate-300 bg-white shadow-2xl shadow-black/60 sm:rounded-3xl"
       >
         {/* Header */}
-        <div className="relative shrink-0 overflow-hidden border-b border-white/10 px-5 py-5 sm:px-6">
+        <div className="relative shrink-0 overflow-hidden border-b border-slate-200 px-5 py-5 sm:px-6">
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-indigo-600/15 via-violet-600/10 to-transparent" />
           <div className="relative flex items-start justify-between gap-4">
             <div>
-              <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider text-indigo-300">
+              <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider text-indigo-600">
                 <Sparkles className="h-3 w-3" />
                 Builder Dashboard
               </div>
-              <h2 className="text-lg font-bold text-white sm:text-xl">Susun Tampilan Overview</h2>
+              <h2 className="text-lg font-bold text-slate-900 sm:text-xl">Susun Tampilan Overview</h2>
               <p className="mt-1 text-sm text-slate-400">
                 Klik widget untuk menambah · pratinjau siluet di panel kanan
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="hidden rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300 sm:inline">
+              <span className="hidden rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600 sm:inline">
                 {visible.length} widget dipilih
               </span>
               {syncStatus === "saving" && (
@@ -228,7 +228,7 @@ function BuilderDialog({
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+                className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900"
                 aria-label="Tutup"
               >
                 <X className="h-5 w-5" />
@@ -240,10 +240,10 @@ function BuilderDialog({
         {/* Body */}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
           {/* Kiri — katalog */}
-          <div className="min-h-0 flex-1 overflow-y-auto border-b border-white/10 p-5 sm:p-6 lg:border-b-0 lg:border-r">
+          <div className="min-h-0 flex-1 overflow-y-auto border-b border-slate-200 p-5 sm:p-6 lg:border-b-0 lg:border-r">
             {/* Template */}
             <section className="mb-6">
-              <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
+              <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
                 <LayoutTemplate className="h-4 w-4 text-violet-400" />
                 Template cepat
               </p>
@@ -253,15 +253,15 @@ function BuilderDialog({
                     key={t.id}
                     type="button"
                     onClick={() => applyTemplate(t.id)}
-                    className="group overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-left transition-all hover:border-violet-500/50 hover:bg-violet-500/10 hover:shadow-lg hover:shadow-violet-500/10"
+                    className="group overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 text-left transition-all hover:border-violet-500/50 hover:bg-violet-500/10 hover:shadow-lg hover:shadow-violet-500/10"
                   >
-                    <div className="mb-2 overflow-hidden rounded-lg bg-slate-900/80 p-2">
+                    <div className="mb-2 overflow-hidden rounded-lg bg-white p-2">
                       <LayoutSilhouettePreview
                         widgets={TEMPLATE_PREVIEW[t.id]}
                         className="!min-h-0 !border-0 !bg-transparent !p-0"
                       />
                     </div>
-                    <span className="block text-xs font-semibold text-white">{t.label}</span>
+                    <span className="block text-xs font-semibold text-slate-900">{t.label}</span>
                     <span className="mt-0.5 block text-[10px] leading-snug text-slate-500">
                       {t.description}
                     </span>
@@ -272,7 +272,7 @@ function BuilderDialog({
 
             {/* Widget grid */}
             <section className="mb-6">
-              <p className="mb-3 text-sm font-semibold text-white">Pilih widget</p>
+              <p className="mb-3 text-sm font-semibold text-slate-900">Pilih widget</p>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
                 {sorted.map((widget) => {
                   const isActive = widget.visible;
@@ -286,8 +286,8 @@ function BuilderDialog({
                         "relative overflow-hidden rounded-2xl border p-3.5 text-left transition-all duration-200",
                         isActive
                           ? "border-indigo-500/60 bg-indigo-500/10 shadow-md shadow-indigo-500/10"
-                          : "border-white/10 bg-white/[0.02] hover:border-white/25 hover:bg-white/[0.04]",
-                        isSel && "ring-2 ring-indigo-400/60 ring-offset-2 ring-offset-slate-950"
+                          : "border-slate-200 bg-slate-50 hover:border-indigo-300 hover:bg-indigo-50",
+                        isSel && "ring-2 ring-indigo-400/60 ring-offset-2 ring-offset-white"
                       )}
                     >
                       {isActive && (
@@ -296,7 +296,7 @@ function BuilderDialog({
                         </span>
                       )}
                       <WidgetSilhouette type={widget.type} active={isActive} className="mb-3" />
-                      <p className="truncate pr-6 text-sm font-medium text-white">
+                      <p className="truncate pr-6 text-sm font-medium text-slate-900">
                         {widgetLabel(widget, data)}
                       </p>
                       <p className="mt-0.5 text-[11px] text-slate-500">
@@ -305,7 +305,7 @@ function BuilderDialog({
                       <span
                         className={cn(
                           "mt-2.5 inline-flex items-center gap-1 text-[11px] font-medium",
-                          isActive ? "text-indigo-300" : "text-slate-500"
+                          isActive ? "text-indigo-600" : "text-slate-500"
                         )}
                       >
                         {isActive ? "Ditambahkan — klik untuk hapus" : (
@@ -322,7 +322,7 @@ function BuilderDialog({
 
             {selected && isChart && selected.visible && (
               <section className="mb-6 rounded-2xl border border-indigo-500/25 bg-indigo-500/[0.07] p-4">
-                <p className="mb-3 text-sm font-semibold text-indigo-200">
+                <p className="mb-3 text-sm font-semibold text-indigo-700">
                   Atur grafik: {widgetLabel(selected, data)}
                 </p>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -333,7 +333,7 @@ function BuilderDialog({
                       onChange={(e) =>
                         patchWidget(selected.id, { chartType: e.target.value as ChartType })
                       }
-                      className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white focus:border-indigo-500/50 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-indigo-500/50 focus:outline-none"
                     >
                       {ALL_CHART_TYPES.map((t) => (
                         <option key={t} value={t}>
@@ -349,7 +349,7 @@ function BuilderDialog({
                       onChange={(e) =>
                         patchWidget(selected.id, { categoryKey: e.target.value || undefined })
                       }
-                      className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white focus:border-indigo-500/50 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-indigo-500/50 focus:outline-none"
                     >
                       <option value="">Otomatis</option>
                       {categoryCols.map((c) => (
@@ -366,7 +366,7 @@ function BuilderDialog({
                       onChange={(e) =>
                         patchWidget(selected.id, { valueKey: e.target.value || undefined })
                       }
-                      className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-white focus:border-indigo-500/50 focus:outline-none"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-indigo-500/50 focus:outline-none"
                     >
                       <option value="">Hitung jumlah baris</option>
                       {numericCols.map((c) => (
@@ -391,9 +391,9 @@ function BuilderDialog({
           </div>
 
           {/* Kanan — preview */}
-          <div className="flex w-full shrink-0 flex-col bg-slate-900/40 lg:w-[min(340px,38%)]">
-            <div className="border-b border-white/10 px-5 py-4">
-              <p className="flex items-center gap-2 text-sm font-semibold text-white">
+          <div className="flex w-full shrink-0 flex-col bg-white/40 lg:w-[min(340px,38%)]">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <p className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                 <Layers className="h-4 w-4 text-cyan-400" />
                 Pratinjau susunan
               </p>
@@ -404,11 +404,11 @@ function BuilderDialog({
 
             <div className="flex-1 overflow-y-auto p-5">
               {/* Phone-style frame */}
-              <div className="mx-auto max-w-[280px] rounded-[1.75rem] border border-white/15 bg-slate-950 p-3 shadow-xl shadow-black/40">
+              <div className="mx-auto max-w-[280px] rounded-[1.75rem] border border-slate-300 bg-white p-3 shadow-xl shadow-black/40">
                 <div className="mb-2 flex justify-center">
-                  <div className="h-1 w-12 rounded-full bg-white/15" />
+                  <div className="h-1 w-12 rounded-full bg-slate-200" />
                 </div>
-                <div className="max-h-[320px] overflow-y-auto rounded-2xl bg-slate-900/80 p-3">
+                <div className="max-h-[320px] overflow-y-auto rounded-2xl bg-white p-3">
                   <LayoutSilhouettePreview
                     widgets={visible.map((w) => ({ id: w.id, type: w.type }))}
                     className="!min-h-[180px] !border-0 !bg-transparent !p-0"
@@ -424,20 +424,20 @@ function BuilderDialog({
                   {visible.map((w, i) => (
                     <li
                       key={w.id}
-                      className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5"
+                      className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5"
                     >
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-indigo-500/20 text-[11px] font-bold text-indigo-300">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-[11px] font-bold text-indigo-600">
                         {i + 1}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-xs text-slate-200">
                         {widgetLabel(w, data)}
                       </span>
-                      <div className="flex shrink-0 overflow-hidden rounded-lg border border-white/10">
+                      <div className="flex shrink-0 overflow-hidden rounded-lg border border-slate-200">
                         <button
                           type="button"
                           disabled={i === 0}
                           onClick={() => moveWidget(w.id, "up")}
-                          className="px-2 py-1 text-slate-500 hover:bg-white/10 hover:text-white disabled:opacity-25"
+                          className="px-2 py-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-25"
                         >
                           <ChevronUp className="h-3.5 w-3.5" />
                         </button>
@@ -445,7 +445,7 @@ function BuilderDialog({
                           type="button"
                           disabled={i === visible.length - 1}
                           onClick={() => moveWidget(w.id, "down")}
-                          className="border-l border-white/10 px-2 py-1 text-slate-500 hover:bg-white/10 hover:text-white disabled:opacity-25"
+                          className="border-l border-slate-200 px-2 py-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-25"
                         >
                           <ChevronDown className="h-3.5 w-3.5" />
                         </button>
@@ -459,14 +459,14 @@ function BuilderDialog({
         </div>
 
         {/* Footer */}
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-slate-900/90 px-5 py-4 sm:px-6">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white/90 px-5 py-4 sm:px-6">
           <button
             type="button"
             onClick={() => {
               onReset();
               setDraft(structuredClone(layout));
             }}
-            className="flex items-center gap-1.5 text-xs text-slate-500 transition-colors hover:text-slate-300"
+            className="flex items-center gap-1.5 text-xs text-slate-500 transition-colors hover:text-slate-600"
           >
             <RotateCcw className="h-3.5 w-3.5" />
             Reset default
@@ -475,7 +475,7 @@ function BuilderDialog({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-white/10 px-5 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:bg-white/5"
+              className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
             >
               Batal
             </button>

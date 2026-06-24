@@ -144,6 +144,8 @@ export function describeAction(
         insights: "Insights",
         data: "Tabel Data",
         columns: "Profil Kolom",
+        sources: "Sumber Data",
+        sql: "SQL",
       };
       return `Buka ${labels[action.view]}`;
     }

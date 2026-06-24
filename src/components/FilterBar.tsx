@@ -35,25 +35,27 @@ export function FilterBar({ columns, filters, onChange, rows, totalRows }: Filte
   };
 
   return (
-    <div className="glass-card rounded-2xl p-4">
-      <div className="mb-3 flex items-center justify-between">
+    <div className="surface-card p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Filter className="h-4 w-4 text-indigo-400" />
-          <span className="text-sm font-medium text-white">Filter Data</span>
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50">
+            <Filter className="h-3.5 w-3.5 text-indigo-600" />
+          </div>
+          <span className="text-sm font-medium text-slate-900">Filter</span>
           {activeCount > 0 && (
-            <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[10px] font-medium text-indigo-300">
-              {activeCount} aktif
+            <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+              {activeCount}
             </span>
           )}
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-500">
-            {filteredCount} / {totalRows} baris
+          <span className="text-xs tabular-nums text-slate-500">
+            {filteredCount.toLocaleString("id-ID")} / {totalRows.toLocaleString("id-ID")} baris
           </span>
           {activeCount > 0 && (
             <button
               onClick={clearAll}
-              className="flex items-center gap-1 text-xs text-slate-400 transition-colors hover:text-white"
+              className="flex items-center gap-1 text-xs font-medium text-slate-500 transition-colors hover:text-indigo-600"
             >
               <X className="h-3 w-3" />
               Reset
@@ -71,10 +73,10 @@ export function FilterBar({ columns, filters, onChange, rows, totalRows }: Filte
               onChange({ ...filters, [col.key]: e.target.value || "" })
             }
             className={cn(
-              "rounded-xl border bg-slate-900/60 px-3 py-2 text-xs text-slate-300 transition-colors focus:border-indigo-500/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/20",
+              "rounded-lg border bg-white px-3 py-2 text-xs text-slate-700 transition-colors focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/15",
               filters[col.key]
-                ? "border-indigo-500/40 text-indigo-200"
-                : "border-white/10"
+                ? "border-indigo-300 font-medium text-indigo-700"
+                : "border-slate-200"
             )}
           >
             <option value="">{col.label}: Semua</option>

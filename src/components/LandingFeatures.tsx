@@ -11,67 +11,69 @@ const FEATURES = [
   {
     icon: Link2,
     title: "Paste & Go",
-    desc: "Cukup paste link Google Sheet publik, dashboard langsung tersedia dalam hitungan detik.",
-    color: "text-indigo-400 bg-indigo-500/10",
+    desc: "Paste link Google Sheet publik — dashboard langsung tersedia.",
+    accent: "border-l-indigo-500",
+    iconClass: "bg-indigo-50 text-indigo-600",
   },
   {
     icon: BarChart3,
-    title: "12+ Grafik Otomatis",
-    desc: "Pie, donut, bar, area, line, radial — dipilih otomatis berdasarkan tipe data kolom.",
-    color: "text-violet-400 bg-violet-500/10",
+    title: "Grafik Otomatis",
+    desc: "Pie, bar, line, area, dan lainnya dipilih dari tipe kolom.",
+    accent: "border-l-violet-500",
+    iconClass: "bg-violet-50 text-violet-600",
   },
   {
     icon: Bot,
-    title: "AI Data Assistant",
-    desc: "Tanya isi data, minta saran visualisasi, dan dapatkan insight bisnis instan.",
-    color: "text-cyan-400 bg-cyan-500/10",
+    title: "AI Assistant",
+    desc: "Tanya data, minta visualisasi, dan atur tampilan via chat.",
+    accent: "border-l-cyan-500",
+    iconClass: "bg-cyan-50 text-cyan-600",
   },
   {
     icon: Zap,
     title: "Filter Real-time",
-    desc: "Filter berdasarkan status, kategori, atau cabang — semua grafik ikut terupdate.",
-    color: "text-amber-400 bg-amber-500/10",
+    desc: "Filter dimensi — semua grafik ikut terupdate.",
+    accent: "border-l-amber-500",
+    iconClass: "bg-amber-50 text-amber-600",
   },
   {
     icon: Layers,
-    title: "Multi-View Dashboard",
-    desc: "Overview, grafik, insights, tabel, profil kolom — semua dalam satu aplikasi.",
-    color: "text-emerald-400 bg-emerald-500/10",
+    title: "Multi-View",
+    desc: "Overview, grafik, insights, tabel, dan profil kolom.",
+    accent: "border-l-emerald-500",
+    iconClass: "bg-emerald-50 text-emerald-600",
   },
   {
     icon: Shield,
     title: "Gratis & Aman",
-    desc: "Tanpa biaya hosting. API key OpenAI hanya untuk fitur chat, disimpan aman di server.",
-    color: "text-rose-400 bg-rose-500/10",
+    desc: "Tanpa biaya hosting. API key hanya untuk fitur chat.",
+    accent: "border-l-rose-500",
+    iconClass: "bg-rose-50 text-rose-600",
   },
 ];
 
 export function LandingFeatures() {
   return (
-    <section className="px-4 py-16 sm:px-6">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-10 text-center">
-          <h2 className="text-2xl font-bold text-white sm:text-3xl">
-            Semua yang Anda butuhkan
-          </h2>
-          <p className="mx-auto mt-2 max-w-xl text-sm text-slate-400">
-            Dari spreadsheet biasa menjadi dashboard profesional tanpa coding
+    <section className="border-t border-slate-200/80 bg-white px-4 py-14 sm:px-6">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-8 text-center">
+          <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">Fitur utama</h2>
+          <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
+            Dari spreadsheet ke dashboard profesional — tanpa coding
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map((item, i) => (
             <div
               key={item.title}
-              className={`animate-fade-in-up glass-card group rounded-2xl p-6 transition-all duration-300 hover:-translate-y-1 hover:border-white/15 hover:shadow-xl stagger-${Math.min(i + 1, 6)}`}
+              className={`surface-card animate-fade-in-up border-l-[3px] p-5 transition-shadow hover:shadow-[var(--shadow-card-hover)] ${item.accent} stagger-${Math.min(i + 1, 6)}`}
             >
-              <div
-                className={`mb-4 inline-flex rounded-xl p-3 ${item.color} transition-transform group-hover:scale-110`}
-              >
-                <item.icon className="h-6 w-6" />
+              <div className={`mb-3 inline-flex rounded-lg p-2.5 ${item.iconClass}`}>
+                <item.icon className="h-5 w-5" />
               </div>
-              <h3 className="font-semibold text-white">{item.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-slate-400">{item.desc}</p>
+              <h3 className="font-semibold text-slate-900">{item.title}</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-slate-500">{item.desc}</p>
             </div>
           ))}
         </div>

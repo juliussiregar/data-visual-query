@@ -1,4 +1,4 @@
-import { aggregateData } from "./analyzer";
+import { aggregateData } from "./aggregation";
 import type { ChartConfig, ChartType, SheetData, WidgetConfig } from "./types";
 
 export function findChartById(data: SheetData, chartId: string): ChartConfig | undefined {

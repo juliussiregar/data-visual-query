@@ -1,32 +1,35 @@
 import type { ChartConfig } from "@/lib/types";
 import { ChartRenderer } from "./ChartRenderer";
-import { Sparkles } from "lucide-react";
+import { MousePointerClick } from "lucide-react";
 
 interface HeroChartProps {
   chart: ChartConfig | undefined;
+  onDrillDown?: (value: string) => void;
 }
 
-export function HeroChart({ chart }: HeroChartProps) {
+export function HeroChart({ chart, onDrillDown }: HeroChartProps) {
   if (!chart) return null;
 
   return (
-    <div className="glass-card relative h-full overflow-hidden rounded-2xl p-6">
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-indigo-500/10 via-transparent to-violet-500/10" />
-      <div className="pointer-events-none absolute -right-20 -top-20 h-52 w-52 rounded-full bg-indigo-500/15 blur-3xl" />
-
-      <div className="relative mb-5 flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/20 ring-1 ring-indigo-500/30">
-          <Sparkles className="h-5 w-5 text-indigo-400" />
-        </div>
+    <div className="surface-card h-full p-5 sm:p-6">
+      <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-indigo-400/80">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-indigo-600">
             Grafik Utama
           </p>
-          <h3 className="text-lg font-semibold text-white">{chart.title}</h3>
+          <h3 className="mt-0.5 text-base font-semibold text-slate-900 sm:text-lg">
+            {chart.title}
+          </h3>
         </div>
+        {onDrillDown && (
+          <span className="inline-flex items-center gap-1 rounded-md bg-slate-50 px-2 py-1 text-[10px] text-slate-500">
+            <MousePointerClick className="h-3 w-3" />
+            Klik untuk filter
+          </span>
+        )}
       </div>
 
-      <ChartRenderer chart={chart} large />
+      <ChartRenderer chart={chart} large onDrillDown={onDrillDown} />
     </div>
   );
 }

@@ -14,9 +14,9 @@ import {
 } from "lucide-react";
 import type { SavedSheet } from "@/lib/sheet-storage";
 import {
-  getSavedSheets,
-  saveSheet,
-  removeSavedSheet,
+  fetchSavedSheets,
+  saveSheetRemote,
+  removeSavedSheetRemote,
   getShareableUrl,
   truncateUrl,
 } from "@/lib/sheet-storage";
@@ -49,7 +49,9 @@ export function SavedSheetsMenu({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const refresh = () => setSaved(getSavedSheets());
+  const refresh = () => {
+    void fetchSavedSheets().then(setSaved);
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -114,10 +116,11 @@ export function SavedSheetsMenu({
 
   const handleSave = () => {
     if (!currentUrl) return;
-    saveSheet(currentUrl, saveLabel);
-    setSaveLabel("");
-    setShowSaveForm(false);
-    refresh();
+    void saveSheetRemote(currentUrl, saveLabel).then(() => {
+      setSaveLabel("");
+      setShowSaveForm(false);
+      refresh();
+    });
   };
 
   const handleCopyShare = async () => {
@@ -132,35 +135,35 @@ export function SavedSheetsMenu({
     <div
       ref={dropdownRef}
       role="menu"
-      className="layer-dropdown animate-fade-in fixed overflow-hidden rounded-2xl border border-white/15 bg-slate-950 shadow-2xl shadow-black/60 ring-1 ring-white/10"
+      className="layer-dropdown animate-fade-in fixed overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-2xl shadow-black/60 ring-1 ring-slate-200"
       style={{
         top: position.top,
         left: position.left,
         width: DROPDOWN_WIDTH,
       }}
     >
-      <div className="border-b border-white/10 px-4 py-3">
-        <p className="text-sm font-semibold text-white">Link Tersimpan</p>
-        <p className="text-[10px] text-slate-500">Disimpan di browser ini (tanpa database)</p>
+      <div className="border-b border-slate-200 px-4 py-3">
+        <p className="text-sm font-semibold text-slate-900">Link Tersimpan</p>
+        <p className="text-[10px] text-slate-500">Tersimpan di akun Anda</p>
       </div>
 
       {currentUrl && (
-        <div className="space-y-2 border-b border-white/10 p-3">
+        <div className="space-y-2 border-b border-slate-200 p-3">
           {!showSaveForm ? (
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setShowSaveForm(true)}
                 disabled={isCurrentSaved}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-indigo-500/20 px-3 py-2 text-xs font-medium text-indigo-300 hover:bg-indigo-500/30 disabled:opacity-50"
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-indigo-100 px-3 py-2 text-xs font-medium text-indigo-600 hover:bg-indigo-100 disabled:opacity-50"
               >
                 <BookmarkPlus className="h-3.5 w-3.5" />
                 {isCurrentSaved ? "Sudah Tersimpan" : "Simpan Link Aktif"}
               </button>
               <button
                 type="button"
-                onClick={handleCopyShare}
-                className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 hover:bg-white/5"
+                onClick={() => void handleCopyShare()}
+                className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-600 hover:bg-slate-50"
                 title="Salin link share"
               >
                 {copied ? (
@@ -177,7 +180,7 @@ export function SavedSheetsMenu({
                 value={saveLabel}
                 onChange={(e) => setSaveLabel(e.target.value)}
                 placeholder="Nama (opsional)..."
-                className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:border-indigo-500/50 focus:outline-none"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 placeholder:text-slate-500 focus:border-indigo-500/50 focus:outline-none"
                 autoFocus
               />
               <div className="flex gap-2">
@@ -191,7 +194,7 @@ export function SavedSheetsMenu({
                 <button
                   type="button"
                   onClick={() => setShowSaveForm(false)}
-                  className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-400 hover:bg-white/5"
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-50"
                 >
                   Batal
                 </button>
@@ -216,7 +219,7 @@ export function SavedSheetsMenu({
             <div
               key={item.id}
               className={cn(
-                "group flex items-start gap-2 rounded-xl p-2 transition-colors hover:bg-white/5",
+                "group flex items-start gap-2 rounded-xl p-2 transition-colors hover:bg-slate-50",
                 currentUrl === item.url && "bg-indigo-500/10"
               )}
             >
@@ -228,7 +231,7 @@ export function SavedSheetsMenu({
                 }}
                 className="min-w-0 flex-1 text-left"
               >
-                <p className="truncate text-xs font-medium text-white">{item.label}</p>
+                <p className="truncate text-xs font-medium text-slate-900">{item.label}</p>
                 <p className="mt-0.5 truncate text-[10px] text-slate-500">
                   {truncateUrl(item.url, 36)}
                 </p>
@@ -236,10 +239,9 @@ export function SavedSheetsMenu({
               <button
                 type="button"
                 onClick={() => {
-                  removeSavedSheet(item.id);
-                  refresh();
+                  void removeSavedSheetRemote(item.id).then(refresh);
                 }}
-                className="shrink-0 rounded-lg p-1.5 text-slate-600 opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
+                className="shrink-0 rounded-lg p-1.5 text-slate-600 opacity-0 transition-all hover:bg-red-50 hover:text-red-400 group-hover:opacity-100"
                 aria-label="Hapus"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -249,7 +251,7 @@ export function SavedSheetsMenu({
         )}
       </div>
 
-      <div className="border-t border-white/10 px-3 py-2">
+      <div className="border-t border-slate-200 px-3 py-2">
         <p className="flex items-center gap-1 text-[10px] text-slate-600">
           <Link2 className="h-3 w-3" />
           Buka di perangkat lain: salin link share (↑)
@@ -273,15 +275,15 @@ export function SavedSheetsMenu({
           className={cn(
             "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium transition-colors",
             open
-              ? "border-indigo-500/40 bg-indigo-500/15 text-indigo-200"
-              : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
+              ? "border-indigo-500/40 bg-indigo-50 text-indigo-700"
+              : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
           )}
         >
           <Bookmark className="h-3.5 w-3.5 text-indigo-400" />
           <span className="hidden sm:inline">Link Tersimpan</span>
           <span className="sm:hidden">Saved</span>
           {saved.length > 0 && (
-            <span className="rounded-full bg-indigo-500/30 px-1.5 py-0.5 text-[10px] text-indigo-200">
+            <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] text-indigo-700">
               {saved.length}
             </span>
           )}
@@ -293,7 +295,7 @@ export function SavedSheetsMenu({
         <button
           type="button"
           onClick={onChangeLink}
-          className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+          className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
         >
           <Pencil className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Ganti Link</span>

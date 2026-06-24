@@ -31,7 +31,7 @@ export async function copyDashboardShareUrl(sheetUrls: string[]): Promise<boolea
 export async function fetchRemoteLayout(sheetUrls: string[]): Promise<DashboardLayout | null> {
   const key = getLayoutKey(sheetUrls);
   try {
-    const res = await fetch(`/api/layout?key=${encodeURIComponent(key)}`);
+    const res = await fetch(`/api/user/layouts?key=${encodeURIComponent(key)}`);
     if (!res.ok) return null;
     const json = (await res.json()) as { layout?: DashboardLayout | null };
     return json.layout ?? null;
@@ -43,7 +43,7 @@ export async function fetchRemoteLayout(sheetUrls: string[]): Promise<DashboardL
 export async function saveRemoteLayout(layout: DashboardLayout): Promise<boolean> {
   const key = getLayoutKey(layout.sheetUrls);
   try {
-    const res = await fetch("/api/layout", {
+    const res = await fetch("/api/user/layouts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ key, layout }),

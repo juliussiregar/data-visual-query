@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import type { ChatMessage } from "@/lib/types";
 import type { DashboardAction, DashboardContext } from "@/lib/types";
+import { parseGuardrailResponse } from "@/lib/ai-guardrails";
 import { getOpenAIConfig, getOpenAIConfigError } from "@/lib/openai-config";
+import { AuthError, requireSessionUser } from "@/lib/session-server";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +21,19 @@ Kamu punya DUA peran:
 - insights: insight otomatis & analisis pola data
 - data: tabel interaktif dengan search & export CSV
 - columns: profil & statistik tiap kolom
+
+## Prinsip analisis (penting)
+- SheetVision bersifat **dinamis seperti Grafana** — struktur kolom menentukan metric & grafik, bukan template industri tetap.
+- Metric di data summary adalah hasil **auto-detect** dari kolom (SUM, AVG, dll). Sebut formula/kolom asli saat menjelaskan angka.
+- Jika data tidak cukup untuk menjawab, katakan dengan jujur dan sebut kolom yang dibutuhkan.
+- User juga bisa **klik grafik** untuk drill-through (filter otomatis). Sarankan filter via action jika diminta.
+- **Scope akses** (simulasi role) membatasi baris per dimensi (mis. cabang/region). Data summary & dashboardContext sudah mencerminkan scope aktif — jangan asumsikan user melihat seluruh sheet jika scope aktif.
+- Jika **certifiedMetricsOnly** aktif di context, hanya gunakan metric berstatus certified; tolak atau jelaskan jika pertanyaan butuh metric draft.
+
+## Template layout overview
+- Ringkas: KPI + grafik utama
+- Manajemen: KPI, distribusi, ranking, insights
+- Presentasi: visual menonjol untuk meeting
 
 ## Actions yang bisa kamu kirim
 Kirim array "actions" untuk mengubah dashboard saat user meminta navigasi, filter, layout widget, atau grafik.
@@ -47,10 +62,17 @@ Gunakan chartTitles untuk chartId yang valid.
 ## Format respons WAJIB (JSON valid)
 {
   "reply": "teks jawaban untuk user (boleh pakai bullet dengan • dan **tebal**)",
-  "actions": []
+  "actions": [],
+  "assumptions": ["asumsi 1", "asumsi 2"],
+  "sources": ["kolom/metric yang dipakai"],
+  "confidence": "high"|"medium"|"low"|"insufficient"
 }
 
-Aturan:
+Aturan guardrail:
+- **assumptions**: daftar asumsi perhitungan (kolom, agregasi, filter aktif)
+- **sources**: kolom/metric/KPI yang menjadi dasar jawaban
+- **confidence**: "insufficient" jika data/kolom tidak cukup — jelaskan di reply dan JANGAN mengarang angka
+- Jika confidence insufficient, actions harus kosong kecuali navigasi ke view yang relevan
 - Gunakan fakta dari data sheet yang diberikan
 - Jika user minta ubah tampilan/filter, SELALU sertakan actions yang sesuai
 - Jika hanya tanya data tanpa ubah tampilan, actions boleh array kosong []
@@ -59,20 +81,36 @@ Aturan:
 - reply jangan menyebut JSON atau actions — jelaskan secara natural apa yang kamu lakukan
 - Format uang dalam Rupiah (IDR)`;
 
-function parseChatResponse(raw: string): { reply: string; actions: DashboardAction[] } {
+function parseChatResponse(raw: string): {
+  reply: string;
+  actions: DashboardAction[];
+  guardrail: ReturnType<typeof parseGuardrailResponse>;
+} {
   try {
-    const parsed = JSON.parse(raw) as { reply?: string; actions?: DashboardAction[] };
+    const parsed = JSON.parse(raw) as {
+      reply?: string;
+      actions?: DashboardAction[];
+      assumptions?: string[];
+      sources?: string[];
+      confidence?: string;
+    };
     return {
       reply: parsed.reply ?? raw,
       actions: Array.isArray(parsed.actions) ? parsed.actions : [],
+      guardrail: parseGuardrailResponse(parsed),
     };
   } catch {
-    return { reply: raw, actions: [] };
+    return {
+      reply: raw,
+      actions: [],
+      guardrail: { assumptions: [], sources: [], confidence: "medium" },
+    };
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
+    await requireSessionUser(request);
     const config = getOpenAIConfig();
     if (!config) {
       return NextResponse.json({ error: getOpenAIConfigError() }, { status: 500 });
@@ -90,8 +128,14 @@ export async function POST(request: NextRequest) {
     }
 
     const ctx = dashboardContext as DashboardContext | undefined;
+    const scopeLine = ctx?.dataScope?.values?.length
+      ? `Scope aktif: kolom "${ctx.dataScope.columnKey}" = ${ctx.dataScope.values.join(", ")}`
+      : "Scope akses: tidak aktif (seluruh sheet)";
+    const certifiedLine = ctx?.certifiedMetricsOnly
+      ? "Mode AI: HANYA metric certified — jangan gunakan angka dari metric draft"
+      : "Mode AI: semua metric terdeteksi";
     const contextBlock = ctx
-      ? `\n\n--- DASHBOARD CONTEXT ---\nView aktif: ${ctx.activeView}\nMode edit: ${ctx.editMode}\nFilter aktif: ${JSON.stringify(ctx.filters)}\nSheet URLs: ${ctx.sheetUrls.join(" | ")}\nMerge mode: ${ctx.mergeMode}\nViews tersedia: ${ctx.views.join(", ")}\nKolom bisa difilter:\n${ctx.filterableColumns.map((c) => `- ${c.label} (key: ${c.key}): [${c.values.slice(0, 12).join(", ")}]`).join("\n")}\nGrafik tersedia: ${ctx.chartTitles.join("; ")}\nLayout widgets:\n${ctx.layoutWidgets.map((w) => `- ${w.id} (${w.type}): ${w.visible ? "visible" : "hidden"} — ${w.title}`).join("\n")}`
+      ? `\n\n--- DASHBOARD CONTEXT ---\nView aktif: ${ctx.activeView}\nMode edit: ${ctx.editMode}\n${scopeLine}\n${certifiedLine}\nTotal baris sheet: ${ctx.totalRowCount ?? "?"}\nBaris terlihat (scope+filter): lihat data summary\nFilter aktif: ${JSON.stringify(ctx.filters)}\nSheet URLs: ${ctx.sheetUrls.join(" | ")}\nMerge mode: ${ctx.mergeMode}\nViews tersedia: ${ctx.views.join(", ")}\nKolom bisa difilter:\n${ctx.filterableColumns.map((c) => `- ${c.label} (key: ${c.key}): [${c.values.slice(0, 12).join(", ")}]`).join("\n")}\nGrafik tersedia: ${ctx.chartTitles.join("; ")}\nLayout widgets:\n${ctx.layoutWidgets.map((w) => `- ${w.id} (${w.type}): ${w.visible ? "visible" : "hidden"} — ${w.title}`).join("\n")}`
       : "";
 
     const openai = new OpenAI({ apiKey: config.apiKey });
@@ -115,11 +159,14 @@ export async function POST(request: NextRequest) {
       response_format: { type: "json_object" },
     });
 
-    const raw = completion.choices[0]?.message?.content ?? '{"reply":"Maaf, tidak ada respons.","actions":[]}';
-    const { reply, actions } = parseChatResponse(raw);
+    const raw = completion.choices[0]?.message?.content ?? '{"reply":"Maaf, tidak ada respons.","actions":[],"assumptions":[],"sources":[],"confidence":"medium"}';
+    const { reply, actions, guardrail } = parseChatResponse(raw);
 
-    return NextResponse.json({ reply, actions });
+    return NextResponse.json({ reply, actions, guardrail });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     const message =
       error instanceof Error ? error.message : "Gagal menghubungi OpenAI";
     return NextResponse.json({ error: message }, { status: 500 });
