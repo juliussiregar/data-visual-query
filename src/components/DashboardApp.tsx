@@ -8,7 +8,8 @@ import {
   Menu,
   X,
 } from "lucide-react";
-import type { SheetData, ViewId, DashboardLayout, DashboardAction, DataScope } from "@/lib/types";
+import type { SheetData, ViewId, DashboardLayout, DashboardAction, DataScope, WidgetProposal, WidgetProposalConfirmResult } from "@/lib/types";
+import { applyWidgetProposal, cloneLayout } from "@/lib/widget-proposal";
 import { reanalyze, type Filters } from "@/lib/filters";
 import { computeDataAlerts } from "@/lib/alerts";
 import { findColumnKey, applyLayoutActions } from "@/lib/chat-actions";
@@ -750,6 +751,52 @@ export function DashboardApp() {
     [sheetData, sheetUrls, layout, loadSheets]
   );
 
+  const handleConfirmWidgetProposal = useCallback(
+    (proposal: WidgetProposal): WidgetProposalConfirmResult => {
+      if (!layout || !perms.canEditLayout) return { ok: false };
+      const dataForWidget = viewData ?? sheetData;
+      if (!dataForWidget) return { ok: false };
+
+      const snapshot = cloneLayout(layout);
+      const { layout: next, error } = applyWidgetProposal(layout, dataForWidget, proposal);
+      if (error) {
+        toast(error);
+        return { ok: false };
+      }
+
+      setLayout(next);
+      void flushSave();
+      setActiveView("overview");
+      setMobileNav(false);
+      logAuditClient(
+        "layout_change",
+        `AI widget: ${proposal.summary}`,
+        { operation: proposal.operation },
+        userRole
+      );
+      toast(
+        proposal.operation === "delete"
+          ? "Widget dihapus"
+          : proposal.operation === "update"
+            ? "Widget diperbarui"
+            : "Widget ditambahkan ke Overview"
+      );
+      return { ok: true, layoutSnapshot: snapshot };
+    },
+    [layout, perms.canEditLayout, viewData, sheetData, flushSave, userRole, toast]
+  );
+
+  const handleUndoWidgetLayout = useCallback(
+    (snapshot: DashboardLayout) => {
+      if (!perms.canEditLayout) return;
+      setLayout(snapshot);
+      void flushSave();
+      logAuditClient("layout_change", "Undo perubahan widget AI", {}, userRole);
+      toast("Perubahan widget dibatalkan");
+    },
+    [perms.canEditLayout, flushSave, userRole, toast]
+  );
+
   const renderWelcome = () => (
     <WelcomeView
       project={activeProject}
@@ -1137,6 +1184,8 @@ export function DashboardApp() {
               layout={layout}
               sheetUrls={sheetUrls}
               onApplyActions={applyChatActions}
+              onConfirmWidgetProposal={handleConfirmWidgetProposal}
+              onUndoWidgetLayout={handleUndoWidgetLayout}
             />
           )}
         </div>

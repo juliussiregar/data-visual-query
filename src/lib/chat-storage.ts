@@ -26,10 +26,15 @@ function trimMessages(messages: ChatMessage[]): ChatMessage[] {
   return messages
     .filter(isValidMessage)
     .slice(-CHAT_HISTORY_LIMIT)
-    .map(({ role, content, actions }) => ({
+    .map(({ role, content, actions, widgetProposal, proposalStatus, guardrail, suggestedFollowUps }) => ({
       role,
       content,
       ...(actions?.length ? { actions } : {}),
+      ...(widgetProposal
+        ? { widgetProposal, proposalStatus: proposalStatus === "confirmed" ? "confirmed" : proposalStatus ?? "pending" }
+        : {}),
+      ...(guardrail ? { guardrail } : {}),
+      ...(suggestedFollowUps?.length ? { suggestedFollowUps } : {}),
     }));
 }
 

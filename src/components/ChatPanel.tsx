@@ -13,12 +13,14 @@ import {
   Zap,
   History,
   Trash2,
+  Eye,
+  Check,
+  Undo2,
 } from "lucide-react";
-import type { ChatMessage, SheetData, ViewId, DashboardLayout, DataScope } from "@/lib/types";
+import type { ChatMessage, SheetData, ViewId, DashboardLayout, DataScope, WidgetProposal, WidgetProposalConfirmResult, AiQueryDataset, SuggestedFollowUp } from "@/lib/types";
 import type { DashboardAction, DashboardContext } from "@/lib/types";
 import { describeAction } from "@/lib/chat-actions";
-import { buildDataSummaryForChat } from "@/lib/ai-guardrails";
-import { rolePermissions, type UserRole } from "@/lib/auth";
+import type { UserRole } from "@/lib/auth";
 import { getFilterableColumns } from "@/lib/filters";
 import { widgetLabel } from "@/lib/layout";
 import {
@@ -27,6 +29,8 @@ import {
   loadChatHistory,
   saveChatHistory,
 } from "@/lib/chat-storage";
+import { describeWidgetProposal } from "@/lib/widget-proposal";
+import { ChatWidgetPreviewModal } from "./ChatWidgetPreviewModal";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { cn } from "@/lib/utils";
 
@@ -48,8 +52,18 @@ const QUICK_PROMPTS = [
   },
   {
     icon: Wand2,
-    text: "Tampilkan tabel data nasabah prioritas YA",
+    text: "Ubah widget batang jadi donut",
     color: "hover:border-amber-500/40 hover:bg-amber-500/10",
+  },
+  {
+    icon: Sparkles,
+    text: "Di mana tombol export CSV?",
+    color: "hover:border-cyan-500/40 hover:bg-cyan-500/10",
+  },
+  {
+    icon: LayoutDashboard,
+    text: "Cara filter data di Explore?",
+    color: "hover:border-violet-500/40 hover:bg-violet-500/10",
   },
 ];
 
@@ -76,7 +90,10 @@ interface ChatPanelProps {
   userRole: UserRole;
   layout: DashboardLayout;
   sheetUrls: string[];
+  canManageWidgets: boolean;
   onApplyActions: (actions: DashboardAction[]) => void;
+  onConfirmWidgetProposal: (proposal: WidgetProposal) => WidgetProposalConfirmResult;
+  onUndoWidgetLayout: (snapshot: DashboardLayout) => void;
   onClose?: () => void;
 }
 
@@ -89,7 +106,10 @@ export function ChatPanel({
   userRole,
   layout,
   sheetUrls,
+  canManageWidgets,
   onApplyActions,
+  onConfirmWidgetProposal,
+  onUndoWidgetLayout,
   onClose,
 }: ChatPanelProps) {
   const sheetKey = sheetUrls.length ? sheetUrls.join("||") : data.sourceUrl;
@@ -99,14 +119,25 @@ export function ChatPanel({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previewProposal, setPreviewProposal] = useState<WidgetProposal | null>(null);
+  const [previewMessageIndex, setPreviewMessageIndex] = useState<number | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const hasHistory = messages.length > 0;
 
-  const perms = rolePermissions(userRole);
-  const dataSummary = buildDataSummaryForChat(data, {
-    maskPII: perms.maskPII,
-  });
+  const queryDataset: AiQueryDataset = useMemo(
+    () => ({
+      columns: data.columns,
+      rows: data.rows,
+      totalRowCount,
+      sourceUrl: data.sourceUrl,
+      kpis: data.kpis,
+      insights: data.insights,
+      metrics: data.metrics,
+      metricValues: data.metricValues,
+    }),
+    [data, totalRowCount]
+  );
 
   const dashboardContext: DashboardContext = useMemo(() => {
     const filterable = getFilterableColumns(data);
@@ -130,6 +161,10 @@ export function ChatPanel({
         type: w.type,
         visible: w.visible,
         title: widgetLabel(w, data),
+        visualShape: w.visualShape,
+        groupByKey: w.dataQuery?.groupByKey ?? w.categoryKey,
+        measureKey: w.dataQuery?.measureKey ?? w.valueKey,
+        aggregation: w.dataQuery?.aggregation ?? w.aggregation,
       })),
       sheetUrls,
       mergeMode: layout.mergeMode,
@@ -172,7 +207,7 @@ export function ChatPanel({
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: newMessages, dataSummary, dashboardContext }),
+          body: JSON.stringify({ messages: newMessages, queryDataset, dashboardContext }),
         });
 
         const json = await res.json();
@@ -183,13 +218,21 @@ export function ChatPanel({
           onApplyActions(actions);
         }
 
+        const widgetProposal = json.widgetProposal as WidgetProposal | null | undefined;
+        const suggestedFollowUps = (json.suggestedFollowUps ?? []) as SuggestedFollowUp[];
+        const queryFacts = json.queryFacts as ChatMessage["queryFacts"];
+
         setMessages([
           ...newMessages,
           {
             role: "assistant",
             content: json.reply,
             actions: actions.length > 0 ? actions : undefined,
+            widgetProposal: widgetProposal ?? undefined,
+            proposalStatus: widgetProposal ? "pending" : undefined,
             guardrail: json.guardrail,
+            suggestedFollowUps: suggestedFollowUps.length > 0 ? suggestedFollowUps : undefined,
+            queryFacts: queryFacts?.length ? queryFacts : undefined,
           },
         ]);
       } catch (err) {
@@ -198,8 +241,57 @@ export function ChatPanel({
         setLoading(false);
       }
     },
-    [loading, messages, dataSummary, dashboardContext, onApplyActions]
+    [loading, messages, queryDataset, dashboardContext, onApplyActions]
   );
+
+  const markProposalStatus = useCallback((index: number, status: "confirmed" | "rejected") => {
+    setMessages((prev) =>
+      prev.map((m, i) => (i === index ? { ...m, proposalStatus: status } : m))
+    );
+  }, []);
+
+  const handleConfirmProposal = useCallback(
+    (proposal: WidgetProposal, messageIndex: number) => {
+      const result = onConfirmWidgetProposal(proposal);
+      if (result.ok) {
+        setMessages((prev) =>
+          prev.map((m, i) =>
+            i === messageIndex
+              ? {
+                  ...m,
+                  proposalStatus: "confirmed" as const,
+                  layoutSnapshotBefore: result.layoutSnapshot,
+                }
+              : m
+          )
+        );
+      }
+      return result.ok;
+    },
+    [onConfirmWidgetProposal]
+  );
+
+  const handleUndoProposal = useCallback(
+    (messageIndex: number) => {
+      const msg = messages[messageIndex];
+      if (!msg?.layoutSnapshotBefore) return;
+      onUndoWidgetLayout(msg.layoutSnapshotBefore);
+      setMessages((prev) =>
+        prev.map((m, i) =>
+          i === messageIndex
+            ? { ...m, proposalStatus: "pending" as const, layoutSnapshotBefore: undefined }
+            : m
+        )
+      );
+    },
+    [messages, onUndoWidgetLayout]
+  );
+
+  const handleRejectProposal = useCallback((messageIndex: number) => {
+    markProposalStatus(messageIndex, "rejected");
+    setInput("Tolong sesuaikan proposal widget-nya: ");
+    inputRef.current?.focus();
+  }, [markProposalStatus]);
 
   const handleClearHistory = () => {
     const urls = sheetUrls.length ? sheetUrls : [data.sourceUrl];
@@ -223,7 +315,7 @@ export function ChatPanel({
             </div>
             <div>
               <h3 className="text-sm font-semibold text-slate-900">SheetVision AI</h3>
-              <p className="text-[10px] text-emerald-600">Online · Bisa atur dashboard</p>
+              <p className="text-[10px] text-emerald-600">Query engine aktif · Angka dari kode</p>
             </div>
           </div>
           {onClose && (
@@ -353,6 +445,35 @@ export function ChatPanel({
                 )}
               </div>
 
+              {msg.queryFacts && msg.queryFacts.length > 0 && (
+                <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[10px] text-sky-800">
+                  <p className="mb-1 font-semibold text-sky-900">Perhitungan terverifikasi:</p>
+                  <ul className="space-y-0.5">
+                    {msg.queryFacts.map((fact, j) => (
+                      <li key={j}>
+                        <span className="font-mono text-sky-600">{fact.tool}</span> — {fact.summary}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {msg.suggestedFollowUps && msg.suggestedFollowUps.length > 0 && msg.role === "assistant" && (
+                <div className="flex flex-wrap gap-1.5">
+                  {msg.suggestedFollowUps.map((followUp, j) => (
+                    <button
+                      key={j}
+                      type="button"
+                      disabled={loading}
+                      onClick={() => sendMessage(followUp.message)}
+                      className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[10px] font-medium text-indigo-700 transition-colors hover:border-indigo-300 hover:bg-indigo-100 disabled:opacity-50"
+                    >
+                      {followUp.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {msg.guardrail &&
                 (msg.guardrail.sources.length > 0 || msg.guardrail.assumptions.length > 0) && (
                   <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[10px] text-slate-500">
@@ -388,6 +509,70 @@ export function ChatPanel({
                       {describeAction(action, data.columns)}
                     </span>
                   ))}
+                </div>
+              )}
+
+              {msg.widgetProposal && canManageWidgets && (
+                <div
+                  className={cn(
+                    "rounded-xl border px-3 py-3 text-xs",
+                    msg.proposalStatus === "confirmed"
+                      ? "border-emerald-200 bg-emerald-50"
+                      : msg.proposalStatus === "rejected"
+                        ? "border-slate-200 bg-slate-50 opacity-70"
+                        : "border-violet-200 bg-violet-50"
+                  )}
+                >
+                  <p className="font-semibold text-violet-900">
+                    {describeWidgetProposal(msg.widgetProposal, data.columns)}
+                  </p>
+                  <p className="mt-1 text-slate-600">{msg.widgetProposal.summary}</p>
+                  {msg.proposalStatus === "pending" && (
+                    <>
+                      <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 font-medium text-amber-900">
+                        {msg.widgetProposal.validationQuestion}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPreviewProposal(msg.widgetProposal!);
+                            setPreviewMessageIndex(i);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-violet-300 bg-white px-2.5 py-1.5 font-medium text-violet-700 hover:bg-violet-50"
+                        >
+                          <Eye className="h-3 w-3" />
+                          Lihat preview
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmProposal(msg.widgetProposal!, i)}
+                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 font-medium text-white hover:bg-emerald-500"
+                        >
+                          <Check className="h-3 w-3" />
+                          Ya, terapkan
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  {msg.proposalStatus === "confirmed" && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <p className="font-medium text-emerald-700">✓ Diterapkan ke dashboard</p>
+                      {msg.layoutSnapshotBefore && (
+                        <button
+                          type="button"
+                          onClick={() => handleUndoProposal(i)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-50"
+                        >
+                          <Undo2 className="h-3 w-3" />
+                          Batalkan
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {msg.proposalStatus === "rejected" && (
+                    <p className="mt-2 text-slate-500">Dibatalkan — minta penyesuaian di chat</p>
+                  )}
                 </div>
               )}
             </div>
@@ -441,9 +626,24 @@ export function ChatPanel({
           </button>
         </div>
         <p className="mt-2 text-center text-[10px] text-slate-600">
-          Contoh: &quot;Buka grafik&quot; · &quot;Filter status SP3K&quot; · &quot;Reset filter&quot;
+          Contoh: &quot;Buat widget batang per status&quot; · &quot;Cara pakai Explore?&quot; · &quot;Filter status SP3K&quot;
         </p>
       </form>
+
+      {previewProposal && previewMessageIndex !== null && (
+        <ChatWidgetPreviewModal
+          open
+          proposal={previewProposal}
+          data={data}
+          layout={layout}
+          onClose={() => {
+            setPreviewProposal(null);
+            setPreviewMessageIndex(null);
+          }}
+          onConfirm={() => handleConfirmProposal(previewProposal, previewMessageIndex)}
+          onReject={() => handleRejectProposal(previewMessageIndex)}
+        />
+      )}
     </div>
   );
 }

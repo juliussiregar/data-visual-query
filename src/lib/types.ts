@@ -209,15 +209,84 @@ export interface SheetData {
   metricValues?: MetricValues;
 }
 
+export type WidgetProposalOperation = "create" | "update" | "delete";
+
+export interface WidgetProposalCondition {
+  column: string;
+  operator: import("./visual-query").QueryOperator;
+  value: string;
+}
+
+export type WidgetProposalConfirmResult = {
+  ok: boolean;
+  layoutSnapshot?: DashboardLayout;
+};
+
+export interface WidgetProposal {
+  operation: WidgetProposalOperation;
+  /** Wajib untuk update/delete (atau pakai widgetRef) */
+  widgetId?: string;
+  /** Referensi natural: judul widget, bentuk, atau id parsial — alternatif widgetId */
+  widgetRef?: string;
+  visualShape?: WidgetVisualShape;
+  title?: string;
+  layoutWidth?: "full" | "half";
+  groupByKey?: string;
+  measureKey?: string;
+  aggregation?: WidgetAggregation;
+  conditions?: WidgetProposalCondition[];
+  limit?: number;
+  displayColumns?: string[];
+  sortColumn?: string;
+  sortDirection?: "asc" | "desc";
+  visible?: boolean;
+  /** Pertanyaan validasi ke user sebelum diterapkan */
+  validationQuestion: string;
+  /** Ringkasan singkat apa yang akan dilakukan */
+  summary: string;
+}
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   actions?: DashboardAction[];
+  widgetProposal?: WidgetProposal;
+  /** Proposal sudah dikonfirmasi/ditolak user */
+  proposalStatus?: "pending" | "confirmed" | "rejected";
+  /** Snapshot layout sebelum diterapkan — untuk undo (tidak disimpan ke localStorage) */
+  layoutSnapshotBefore?: DashboardLayout;
+  /** Fakta dari query engine (deterministik) */
+  queryFacts?: AiQueryFact[];
+  /** Saran langkah berikutnya dari AI */
+  suggestedFollowUps?: SuggestedFollowUp[];
   guardrail?: {
     assumptions: string[];
     sources: string[];
     confidence: "high" | "medium" | "low" | "insufficient";
   };
+}
+
+/** Dataset untuk query engine AI — baris yang sama dengan yang user lihat di dashboard */
+export interface AiQueryDataset {
+  columns: ColumnMeta[];
+  rows: Record<string, string>[];
+  totalRowCount: number;
+  sourceUrl?: string;
+  kpis?: KpiMetric[];
+  insights?: InsightItem[];
+  metrics?: MetricDefinition[];
+  metricValues?: MetricValues;
+}
+
+export interface AiQueryFact {
+  tool: string;
+  summary: string;
+}
+
+export interface SuggestedFollowUp {
+  label: string;
+  message: string;
+  kind?: "analyze" | "widget" | "filter" | "navigate" | "help";
 }
 
 export type ViewId =
@@ -367,7 +436,16 @@ export interface DashboardContext {
   views: ViewId[];
   filterableColumns: { key: string; label: string; values: string[] }[];
   chartTitles: string[];
-  layoutWidgets: { id: string; type: WidgetType; visible: boolean; title: string }[];
+  layoutWidgets: {
+    id: string;
+    type: WidgetType;
+    visible: boolean;
+    title: string;
+    visualShape?: WidgetVisualShape;
+    groupByKey?: string;
+    measureKey?: string;
+    aggregation?: string;
+  }[];
   sheetUrls: string[];
   mergeMode: boolean;
   editMode: boolean;

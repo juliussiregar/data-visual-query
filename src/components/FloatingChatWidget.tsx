@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Bot, X, Sparkles } from "lucide-react";
 import type { SheetData, ViewId, DashboardLayout, DataScope } from "@/lib/types";
 import type { UserRole } from "@/lib/auth";
-import type { DashboardAction } from "@/lib/types";
+import type { DashboardAction, WidgetProposal, WidgetProposalConfirmResult } from "@/lib/types";
 import { ChatPanel } from "./ChatPanel";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +18,8 @@ interface FloatingChatWidgetProps {
   layout: DashboardLayout;
   sheetUrls: string[];
   onApplyActions: (actions: DashboardAction[]) => void;
+  onConfirmWidgetProposal: (proposal: WidgetProposal) => WidgetProposalConfirmResult;
+  onUndoWidgetLayout: (snapshot: DashboardLayout) => void;
 }
 
 export function FloatingChatWidget({
@@ -30,6 +32,8 @@ export function FloatingChatWidget({
   layout,
   sheetUrls,
   onApplyActions,
+  onConfirmWidgetProposal,
+  onUndoWidgetLayout,
 }: FloatingChatWidgetProps) {
   const [open, setOpen] = useState(false);
 
@@ -67,6 +71,9 @@ export function FloatingChatWidget({
             layout={layout}
             sheetUrls={sheetUrls}
             onApplyActions={onApplyActions}
+            onConfirmWidgetProposal={onConfirmWidgetProposal}
+            onUndoWidgetLayout={onUndoWidgetLayout}
+            canManageWidgets={userRole !== "viewer"}
             onClose={() => setOpen(false)}
           />
         )}
