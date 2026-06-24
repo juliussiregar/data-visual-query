@@ -113,7 +113,7 @@ export function DataScopeBar({
 
       {label && (
         <p className="mt-2 text-[11px] text-violet-700">
-          Aktif: {label} · tersimpan di browser untuk sheet ini
+          Aktif: {label} · filter berlaku untuk sesi ini
         </p>
       )}
     </div>

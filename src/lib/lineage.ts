@@ -10,10 +10,9 @@ function shortSheetLabel(sourceUrl: string): string {
   if (sourceUrl.includes("mock_db") || sourceUrl.includes("portofolio_kredit")) {
     return "Mock DB";
   }
-  const match = sourceUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
-  if (match) return `Sheet ${match[1].slice(0, 8)}`;
   if (sourceUrl.includes("⨝")) return "Multi-sheet join";
   if (sourceUrl.includes("|")) return "Multi-sheet";
+  if (sourceUrl.includes("/spreadsheets/")) return "Google Sheet";
   return "Google Sheet";
 }
 

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   createSession,
-  findUserByEmail,
+  findUserByUsername,
   verifyPassword,
 } from "@/lib/db/users";
-import { isAppDatabaseConfigured } from "@/lib/db/app-pool";
+import { isAppDatabaseConfigured } from "@/lib/db/prisma";
 import {
   SESSION_COOKIE,
   sessionCookieOptions,
@@ -23,24 +23,24 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { email, password } = body ?? {};
-    if (!email || !password) {
+    const { username, password } = body ?? {};
+    if (!username || !password) {
       return NextResponse.json(
-        { error: "Email dan password wajib diisi" },
+        { error: "Username dan password wajib diisi" },
         { status: 400 }
       );
     }
 
-    const row = await findUserByEmail(String(email));
-    if (!row || !(await verifyPassword(String(password), row.password_hash))) {
-      return NextResponse.json({ error: "Email atau password salah" }, { status: 401 });
+    const row = await findUserByUsername(String(username));
+    if (!row || !(await verifyPassword(String(password), row.passwordHash))) {
+      return NextResponse.json({ error: "Username atau password salah" }, { status: 401 });
     }
 
     const token = await createSession(row.id);
     const expires = sessionExpiryDate();
     const user = {
       id: row.id,
-      email: row.email,
+      username: row.username,
       name: row.name,
       role: row.role,
     };

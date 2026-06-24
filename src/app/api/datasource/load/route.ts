@@ -42,11 +42,12 @@ export async function POST(request: NextRequest) {
       data.dataset.name = `${String(connectionName ?? table)} (PostgreSQL)`;
     }
 
-    appendAuditEvent(
+    await appendAuditEvent(
       "sheet_load",
       `Load DB table ${table} from ${config.host}`,
       { rowCount: rows.length },
-      user.role
+      user.role,
+      user.id
     );
 
     return NextResponse.json({

@@ -15,7 +15,6 @@ interface FloatingChatWidgetProps {
   dataScope: DataScope | null;
   totalRowCount: number;
   userRole: UserRole;
-  certifiedMetricsOnly: boolean;
   layout: DashboardLayout;
   sheetUrls: string[];
   onApplyActions: (actions: DashboardAction[]) => void;
@@ -28,7 +27,6 @@ export function FloatingChatWidget({
   dataScope,
   totalRowCount,
   userRole,
-  certifiedMetricsOnly,
   layout,
   sheetUrls,
   onApplyActions,
@@ -66,7 +64,6 @@ export function FloatingChatWidget({
             dataScope={dataScope}
             totalRowCount={totalRowCount}
             userRole={userRole}
-            certifiedMetricsOnly={certifiedMetricsOnly}
             layout={layout}
             sheetUrls={sheetUrls}
             onApplyActions={onApplyActions}

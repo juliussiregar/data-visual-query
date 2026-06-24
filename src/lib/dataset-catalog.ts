@@ -154,14 +154,14 @@ export function computeFreshness(fetchedAt: string): DatasetMeta["freshness"] {
   };
 }
 
-function deriveDatasetName(sourceUrl: string, mergeMode: boolean): string {
+function deriveDatasetName(
+  sourceUrl: string,
+  mergeMode: boolean,
+  displayName?: string
+): string {
+  if (displayName?.trim()) return displayName.trim();
   if (mergeMode) return "Gabungan Multi-Sheet";
-  try {
-    const id = sourceUrl.match(/\/d\/([a-zA-Z0-9-_]+)/)?.[1];
-    return id ? `Sheet ${id.slice(0, 8)}…` : "Dataset";
-  } catch {
-    return "Dataset";
-  }
+  return "Google Sheet";
 }
 
 export function buildDatasetMeta(
@@ -169,7 +169,8 @@ export function buildDatasetMeta(
   columns: ColumnMeta[],
   sourceUrl: string,
   fetchedAt: string,
-  mergeMode = false
+  mergeMode = false,
+  displayName?: string
 ): DatasetMeta {
   const keys = columns.map((c) => c.key);
   const schemaId = inferSchemaFromKeys(keys);
@@ -179,7 +180,7 @@ export function buildDatasetMeta(
   const nullCells = columns.reduce((sum, c) => sum + (c.nullCount ?? 0), 0);
   const totalCells = rows.length * columns.length;
 
-  const name = deriveDatasetName(sourceUrl, mergeMode);
+  const name = deriveDatasetName(sourceUrl, mergeMode, displayName);
 
   return {
     name,

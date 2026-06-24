@@ -43,7 +43,7 @@ const QUICK_PROMPTS = [
   },
   {
     icon: Sparkles,
-    text: "Buka insights dan ringkas temuan utama",
+    text: "Buka overview dan ringkas data utama",
     color: "hover:border-cyan-500/40 hover:bg-cyan-500/10",
   },
   {
@@ -74,7 +74,6 @@ interface ChatPanelProps {
   dataScope: DataScope | null;
   totalRowCount: number;
   userRole: UserRole;
-  certifiedMetricsOnly: boolean;
   layout: DashboardLayout;
   sheetUrls: string[];
   onApplyActions: (actions: DashboardAction[]) => void;
@@ -88,7 +87,6 @@ export function ChatPanel({
   dataScope,
   totalRowCount,
   userRole,
-  certifiedMetricsOnly,
   layout,
   sheetUrls,
   onApplyActions,
@@ -108,7 +106,6 @@ export function ChatPanel({
   const perms = rolePermissions(userRole);
   const dataSummary = buildDataSummaryForChat(data, {
     maskPII: perms.maskPII,
-    certifiedMetricsOnly,
   });
 
   const dashboardContext: DashboardContext = useMemo(() => {
@@ -119,8 +116,7 @@ export function ChatPanel({
       dataScope,
       totalRowCount,
       userRole,
-      certifiedMetricsOnly,
-      views: ["overview", "charts", "insights", "data", "columns", "sources", "sql"],
+      views: ["overview", "charts", "data", "projects", "sources", "query"],
       filterableColumns: filterable.map((col) => ({
         key: col.key,
         label: col.label,
@@ -139,7 +135,7 @@ export function ChatPanel({
       mergeMode: layout.mergeMode,
       editMode: false,
     };
-  }, [data, activeView, filters, dataScope, totalRowCount, userRole, certifiedMetricsOnly, layout, sheetUrls]);
+  }, [data, activeView, filters, dataScope, totalRowCount, userRole, layout, sheetUrls]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

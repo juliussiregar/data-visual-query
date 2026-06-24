@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  viewer
+  analyst
+  admin
+}
+
+// ── Auth & per-user data ────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  username     String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  role         UserRole @default(analyst)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  sessions         Session[]
+  dbConnections    UserDbConnection[]
+  sheetConnections UserSheetConnection[]
+  layouts          UserLayout[]
+  projects         Project[]
+  auditEvents      AuditEvent[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@map("sessions")
+}
+
+model UserDbConnection {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  name              String
+  host              String
+  port              Int       @default(5432)
+  databaseName      String    @map("database_name")
+  username          String
+  passwordEncrypted String    @map("password_encrypted")
+  ssl               Boolean   @default(false)
+  schemaName        String    @default("public") @map("schema_name")
+  lastTestedAt      DateTime? @map("last_tested_at")
+  lastTestStatus    String?   @map("last_test_status")
+  lastTestMessage   String?   @map("last_test_message")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_db_connections")
+}
+
+model UserSheetConnection {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  url          String
+  label        String
+  savedAt      DateTime @default(now()) @map("saved_at")
+  lastOpenedAt DateTime @default(now()) @map("last_opened_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, url])
+  @@index([userId])
+  @@map("user_sheet_connections")
+}
+
+model UserLayout {
+  userId     String   @map("user_id") @db.Uuid
+  layoutKey  String   @map("layout_key")
+  layoutJson Json     @map("layout_json")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, layoutKey])
+  @@map("user_layouts")
+}
+
+model Project {
+  id                   String   @id @default(uuid()) @db.Uuid
+  userId               String   @map("user_id") @db.Uuid
+  name                 String
+  description          String?
+  sheetUrls            Json     @default("[]") @map("sheet_urls")
+  mergeMode            Boolean  @default(false) @map("merge_mode")
+  dbConnectionIds      Json     @default("[]") @map("db_connection_ids")
+  activeDbConnectionId String?  @map("active_db_connection_id") @db.Uuid
+  activeDbTable        String?  @map("active_db_table")
+  layoutJson           Json?    @map("layout_json")
+  lastOpenedAt         DateTime @default(now()) @map("last_opened_at")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, lastOpenedAt])
+  @@map("projects")
+}
+
+model AuditEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  type      String
+  message   String
+  role      String?
+  metaJson  Json?    @map("meta_json")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([userId])
+  @@index([type])
+  @@map("audit_events")
+}

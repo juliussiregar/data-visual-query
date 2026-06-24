@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSession, createUser, findUserByEmail } from "@/lib/db/users";
-import { isAppDatabaseConfigured } from "@/lib/db/app-pool";
+import { createSession, createUser, findUserByUsername } from "@/lib/db/users";
+import { isAppDatabaseConfigured } from "@/lib/db/prisma";
 import {
   SESSION_COOKIE,
   sessionCookieOptions,
@@ -19,10 +19,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { email, password, name } = body ?? {};
-    if (!email || !password || !name) {
+    const { username, password, name } = body ?? {};
+    if (!username || !password || !name) {
       return NextResponse.json(
-        { error: "Email, password, dan nama wajib diisi" },
+        { error: "Username, password, dan nama wajib diisi" },
         { status: 400 }
       );
     }
@@ -33,12 +33,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const existing = await findUserByEmail(String(email));
-    if (existing) {
-      return NextResponse.json({ error: "Email sudah terdaftar" }, { status: 409 });
+    const normalized = String(username).trim().toLowerCase();
+    if (!/^[a-z0-9._-]{3,32}$/.test(normalized)) {
+      return NextResponse.json(
+        { error: "Username 3–32 karakter: huruf, angka, titik, strip, underscore" },
+        { status: 400 }
+      );
     }
 
-    const user = await createUser(String(email), String(password), String(name));
+    const existing = await findUserByUsername(normalized);
+    if (existing) {
+      return NextResponse.json({ error: "Username sudah terdaftar" }, { status: 409 });
+    }
+
+    const user = await createUser(normalized, String(password), String(name));
     const token = await createSession(user.id);
     const expires = sessionExpiryDate();
     const res = NextResponse.json({ user });

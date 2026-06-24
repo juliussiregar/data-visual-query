@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { ChartConfig, ChartType } from "@/lib/types";
 import { ALL_CHART_TYPES } from "@/lib/types";
 import { ChartRenderer } from "./ChartRenderer";
+import { aggregationLabel, chartTypeLabel } from "@/lib/chart-labels";
 import { BarChart3, Maximize2, Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -15,6 +16,8 @@ interface ChartCardProps {
   onTypeChange?: (type: ChartType) => void;
   showTypePicker?: boolean;
   compactPicker?: boolean;
+  /** select = dropdown (gallery); chips = compact buttons (overview widgets) */
+  pickerStyle?: "select" | "chips";
   onDrillDown?: (value: string) => void;
 }
 
@@ -26,6 +29,7 @@ export function ChartCard({
   onTypeChange,
   showTypePicker = true,
   compactPicker = false,
+  pickerStyle = "select",
   onDrillDown,
 }: ChartCardProps) {
   const [internalType, setInternalType] = useState<ChartType>(chart.type);
@@ -34,7 +38,7 @@ export function ChartCard({
   const chartType = controlledType ?? internalType;
   const setChartType = onTypeChange ?? setInternalType;
   const activeChart = { ...chart, type: chartType };
-
+  const useChips = compactPicker || pickerStyle === "chips";
   const visibleTypes = compactPicker ? ALL_CHART_TYPES.slice(0, 6) : ALL_CHART_TYPES;
 
   return (
@@ -46,51 +50,71 @@ export function ChartCard({
       )}
     >
       <header className="mb-4 flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="mb-1 flex flex-wrap items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="mb-1.5 flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-600">
               <BarChart3 className="h-3 w-3" />
-              {chartType}
+              {chartTypeLabel(chartType)}
+            </span>
+            <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+              {aggregationLabel(chart.aggregation)}
             </span>
             {chart.featured && (
               <span className="rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
-                Utama
+                Featured
               </span>
             )}
           </div>
           <h3 className="text-sm font-semibold text-slate-900 sm:text-base">{chart.title}</h3>
           {chart.description && (
-            <p className="mt-0.5 text-xs text-slate-500">{chart.description}</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{chart.description}</p>
           )}
           {onDrillDown && (
-            <span className="text-[10px] text-slate-400">· klik segmen untuk filter</span>
+            <p className="mt-1 text-[11px] text-slate-400">Click a segment to filter the data table</p>
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
-          {showTypePicker && (
-            <div className="flex max-w-[200px] flex-wrap gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-0.5 sm:max-w-none">
-              {visibleTypes.map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setChartType(t)}
-                  title={t}
-                  className={cn(
-                    "rounded-md px-1.5 py-1 text-[9px] font-medium capitalize transition-colors sm:px-2 sm:text-[10px]",
-                    chartType === t
-                      ? "bg-white text-indigo-700 shadow-sm"
-                      : "text-slate-500 hover:text-slate-700"
-                  )}
-                >
-                  {t === "horizontalBar" ? "H-Bar" : t === "stackedBar" ? "Stack" : t}
-                </button>
-              ))}
-            </div>
-          )}
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+          {showTypePicker &&
+            (useChips ? (
+              <div className="flex max-w-full flex-wrap gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                {visibleTypes.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setChartType(t)}
+                    title={chartTypeLabel(t)}
+                    className={cn(
+                      "rounded-md px-2 py-1 text-[10px] font-medium transition-colors",
+                      chartType === t
+                        ? "bg-white text-indigo-700 shadow-sm"
+                        : "text-slate-500 hover:text-slate-700"
+                    )}
+                  >
+                    {t === "horizontalBar" ? "H-bar" : t === "stackedBar" ? "Stack" : t}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <select
+                value={chartType}
+                onChange={(e) => setChartType(e.target.value as ChartType)}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                aria-label="Chart type"
+              >
+                {ALL_CHART_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {chartTypeLabel(t)}
+                  </option>
+                ))}
+              </select>
+            ))}
           <button
+            type="button"
             onClick={() => setExpanded(!expanded)}
             className="rounded-lg border border-slate-200 p-2 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700"
-            title={expanded ? "Perkecil" : "Perbesar"}
+            title={expanded ? "Collapse" : "Expand"}
+            aria-label={expanded ? "Collapse chart" : "Expand chart"}
           >
             {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
           </button>

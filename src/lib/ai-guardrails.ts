@@ -1,6 +1,5 @@
-import type { ColumnMeta, SheetData, MetricDefinition } from "./types";
+import type { SheetData } from "./types";
 import { maskRows, sanitizeSampleValues } from "./pii-mask";
-import { filterCertifiedMetrics, certifiedMetricsNotice } from "./certified-metrics-filter";
 
 export interface GuardrailMeta {
   assumptions: string[];
@@ -10,22 +9,13 @@ export interface GuardrailMeta {
 
 export interface ChatSummaryOptions {
   maskPII?: boolean;
-  certifiedMetricsOnly?: boolean;
-}
-
-function metricsForSummary(
-  metrics: MetricDefinition[] | undefined,
-  certifiedOnly: boolean
-): MetricDefinition[] {
-  if (!metrics?.length) return [];
-  return certifiedOnly ? filterCertifiedMetrics(metrics) : metrics;
 }
 
 export function buildDataSummaryForChat(
   data: SheetData,
   options: ChatSummaryOptions = {}
 ): string {
-  const { maskPII = true, certifiedMetricsOnly = false } = options;
+  const { maskPII = true } = options;
   const columnSummary = sanitizeSampleValues(data.columns);
 
   const sampleRows = maskPII
@@ -38,13 +28,10 @@ export function buildDataSummaryForChat(
     ? `Dataset: ${ds.name}\nSumber: ${ds.sourceType}\nLineage: ${ds.lineageSummary ?? "—"}\nFreshness: ${ds.freshness.label}\nKualitas data: skor ${ds.quality?.score ?? "—"}/100\nProfil: ${ds.profile.rowCount} baris, ${ds.profile.dimensionCount} dimension, ${ds.profile.measureCount} measure\n`
     : "";
 
-  const summaryMetrics = metricsForSummary(data.metrics, certifiedMetricsOnly);
   const metricsBlock =
-    summaryMetrics.length > 0
-      ? `Metrics${certifiedMetricsOnly ? " (certified only)" : ""}:\n${summaryMetrics.map((m) => `- ${m.name} [${m.status}]: ${m.formula}`).join("\n")}\n`
-      : certifiedMetricsOnly
-        ? "Metrics: tidak ada metric certified untuk konteks ini.\n"
-        : "";
+    data.metrics && data.metrics.length > 0
+      ? `Metrics:\n${data.metrics.map((m) => `- ${m.name} [${m.status}]: ${m.formula}`).join("\n")}\n`
+      : "";
 
   const valuesBlock = data.metricValues
     ? `Nilai Metric Saat Ini: ${JSON.stringify(data.metricValues)}\n`
@@ -61,7 +48,7 @@ export function buildDataSummaryForChat(
         .join(", ")}\n`
     : "";
 
-  return `${datasetBlock}${metricsBlock}${valuesBlock}${piiNote}${certifiedMetricsNotice(certifiedMetricsOnly)}${lineageNote}Kolom:\n${columnSummary}\n\nJumlah baris: ${data.rows.length}\nKPI: ${data.kpis.map((k) => `${k.label}: ${k.value}${k.formula ? ` [${k.formula}]` : ""}`).join(", ")}\nInsights: ${data.insights.map((i) => i.title).join("; ")}\n\nSample data (15 baris pertama):\n${sampleJson}`;
+  return `${datasetBlock}${metricsBlock}${valuesBlock}${piiNote}${lineageNote}Kolom:\n${columnSummary}\n\nJumlah baris: ${data.rows.length}\nKPI: ${data.kpis.map((k) => `${k.label}: ${k.value}${k.formula ? ` [${k.formula}]` : ""}`).join(", ")}\nInsights: ${data.insights.map((i) => i.title).join("; ")}\n\nSample data (15 baris pertama):\n${sampleJson}`;
 }
 
 export function parseGuardrailResponse(raw: {

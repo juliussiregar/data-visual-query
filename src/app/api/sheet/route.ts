@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchSheetData, parseSheetUrl } from "@/lib/sheets";
+import { fetchSheetData, parseSheetUrl, resolveSheetDisplayNames } from "@/lib/sheets";
 import { analyzeSheetData } from "@/lib/analyzer";
 import { mergeSheetDataSet } from "@/lib/merge-sheets";
 import { joinSheetDataSets, suggestJoinConfig, computeFunnelMetrics } from "@/lib/join-sheets";
@@ -10,9 +10,9 @@ import type { DataScope, SheetData } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-async function loadSingleSheet(url: string): Promise<SheetData> {
+async function loadSingleSheet(url: string, displayName?: string): Promise<SheetData> {
   const rows = await fetchSheetData(url);
-  return analyzeSheetData(rows, url);
+  return analyzeSheetData(rows, url, undefined, { displayName });
 }
 
 async function loadAndPolicy(
@@ -56,12 +56,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const sheetLabels = await resolveSheetDisplayNames(sheetUrls);
+
     if (sheetUrls.length === 1 && !merge && !join) {
-      const data = await loadAndPolicy(() => loadSingleSheet(sheetUrls[0]), role, scope);
-      return NextResponse.json({ ...data, sheetUrls, mergeMode: false, joinMode: false });
+      const data = await loadAndPolicy(
+        () => loadSingleSheet(sheetUrls[0], sheetLabels[sheetUrls[0]]),
+        role,
+        scope
+      );
+      return NextResponse.json({
+        ...data,
+        sheetUrls,
+        sheetLabels,
+        mergeMode: false,
+        joinMode: false,
+      });
     }
 
-    const datasets = await Promise.all(sheetUrls.map((u) => loadSingleSheet(u)));
+    const datasets = await Promise.all(
+      sheetUrls.map((u) => loadSingleSheet(u, sheetLabels[u]))
+    );
 
     if (join && datasets.length === 2) {
       const joinConfig = suggestJoinConfig(datasets[0], datasets[1]);
@@ -69,9 +83,12 @@ export async function POST(request: NextRequest) {
         const joined = joinSheetDataSets(datasets[0], datasets[1], joinConfig);
         const data = applyServerDataPolicy(joined, { role, scope });
         const funnel = computeFunnelMetrics(datasets[0], datasets[1], joinConfig);
+        const joinName = sheetUrls.map((u) => sheetLabels[u]).join(" ⨝ ");
+        if (data.dataset) data.dataset.name = joinName;
         return NextResponse.json({
           ...data,
           sheetUrls,
+          sheetLabels,
           mergeMode: false,
           joinMode: true,
           joinConfig,
@@ -80,12 +97,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const merged = mergeSheetDataSet(datasets);
+    const merged = mergeSheetDataSet(datasets, sheetLabels);
     const data = applyServerDataPolicy(merged, { role, scope });
 
     return NextResponse.json({
       ...data,
       sheetUrls,
+      sheetLabels,
       mergeMode: true,
       joinMode: false,
     });

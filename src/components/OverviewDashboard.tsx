@@ -1,27 +1,30 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import type { DashboardLayout, SheetData, WidgetConfig } from "@/lib/types";
-import type { LayoutTemplateId } from "@/lib/layout";
-import { getVisibleWidgets } from "@/lib/layout";
+import { useEffect, useState } from "react";
+import type { DashboardLayout, SheetData, WidgetConfig, WidgetVisualShape, ChartType } from "@/lib/types";
+import { getVisibleWidgets, updateWidget } from "@/lib/layout";
 import { buildOverviewRows } from "@/lib/overview-layout";
 import { resolveChartForWidget } from "@/lib/chart-builder";
 import type { LayoutSyncStatus } from "@/hooks/useLayoutAutoSave";
-import type { Filters } from "@/lib/filters";
-import { KPICards } from "./KPICards";
 import { ChartCard } from "./ChartCard";
 import { StatusDistribution } from "./StatusDistribution";
 import { TopRecords } from "./TopRecords";
-import { InsightsPanel } from "./InsightsPanel";
-import { HeroChart } from "./HeroChart";
 import { LayoutEditToolbar } from "./LayoutEditToolbar";
-import { LayoutTemplateBar } from "./LayoutTemplateBar";
 import { DashboardBuilderModal } from "./DashboardBuilderModal";
-import { OverviewHeader } from "./OverviewHeader";
-import { DatasetCatalogPanel } from "./DatasetCatalogPanel";
-import { MetricsLibraryPanel } from "./MetricsLibraryPanel";
+import { OverviewEmptyRecommendations } from "./OverviewEmptyRecommendations";
+import { WidgetStatCard } from "./WidgetStatCard";
+import {
+  buildDistributionFromWidget,
+  buildStatFromWidget,
+  buildTableFromWidget,
+  buildTopRecordsFromWidget,
+} from "@/lib/widget-data";
+import { DataTable } from "./DataTable";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Pencil, Plus } from "lucide-react";
+import { Pencil, Download } from "lucide-react";
+import { buildLayoutFromTemplate } from "@/lib/dashboard-templates";
+import { buildCsvFromRows, downloadCsv } from "@/lib/report-schedule";
+import { useToast } from "./ToastProvider";
 
 interface OverviewDashboardProps {
   data: SheetData;
@@ -29,11 +32,6 @@ interface OverviewDashboardProps {
   sheetUrls: string[];
   syncStatus: LayoutSyncStatus;
   linkCopied: boolean;
-  filters?: Filters;
-  distributionColumnKey?: string;
-  activeTemplate?: LayoutTemplateId | null;
-  onDrillDown?: (columnKey: string, value: string) => void;
-  onApplyTemplate?: (templateId: LayoutTemplateId) => void;
   onBuilderOpenChange?: (open: boolean) => void;
   onSaveLayout: (layout: DashboardLayout) => void;
   onSaveNow: () => void;
@@ -51,11 +49,6 @@ export function OverviewDashboard({
   sheetUrls,
   syncStatus,
   linkCopied,
-  filters = {},
-  distributionColumnKey,
-  activeTemplate,
-  onDrillDown,
-  onApplyTemplate,
   onBuilderOpenChange,
   onSaveLayout,
   onSaveNow,
@@ -67,66 +60,127 @@ export function OverviewDashboard({
   onReloadMerged,
 }: OverviewDashboardProps) {
   const [builderOpen, setBuilderOpen] = useState(false);
-  const autoOpenedRef = useRef(false);
+  const [builderInitialShape, setBuilderInitialShape] = useState<WidgetVisualShape | undefined>();
+  const [editWidgetId, setEditWidgetId] = useState<string | undefined>();
   const visible = getVisibleWidgets(layout);
-  const rows = buildOverviewRows(layout.widgets);
-
-  useEffect(() => {
-    if (!autoOpenedRef.current && visible.length === 0) {
-      autoOpenedRef.current = true;
-      setBuilderOpen(true);
-    }
-  }, [visible.length]);
+  const rows = buildOverviewRows(visible);
+  const { toast } = useToast();
 
   useEffect(() => {
     onBuilderOpenChange?.(builderOpen);
   }, [builderOpen, onBuilderOpenChange]);
 
-  const openBuilder = () => setBuilderOpen(true);
+  const openBuilder = (shape?: WidgetVisualShape) => {
+    setEditWidgetId(undefined);
+    setBuilderInitialShape(shape);
+    setBuilderOpen(true);
+  };
 
-  const chartDrill = (chart: { categoryKey: string }) =>
-    onDrillDown ? (value: string) => onDrillDown(chart.categoryKey, value) : undefined;
+  const openEditWidget = (widgetId: string) => {
+    setBuilderInitialShape(undefined);
+    setEditWidgetId(widgetId);
+    setBuilderOpen(true);
+  };
 
-  const renderWidgetContent = (widget: WidgetConfig) => {
-    switch (widget.type) {
-      case "kpis":
-        return <KPICards metrics={data.kpis} />;
-      case "hero_chart": {
-        const chart = resolveChartForWidget(data, widget);
-        if (!chart) return null;
-        return <HeroChart chart={chart} onDrillDown={chartDrill(chart)} />;
+  const handleUpdateWidget = (widgetId: string, patch: Partial<WidgetConfig>) => {
+    const next = updateWidget(layout, widgetId, patch);
+    onSaveLayout(next);
+    onSaveNow();
+  };
+
+  const applyTemplate = (templateId: string) => {
+    const next = buildLayoutFromTemplate(templateId, data, sheetUrls);
+    if (!next) return;
+    onSaveLayout(next);
+    onSaveNow();
+    toast("Template applied — edit widgets anytime");
+  };
+
+  const exportTableWidget = (widget: WidgetConfig) => {
+    const table = buildTableFromWidget(data, widget);
+    const keys = table.columns.map((c) => c.key);
+    const csvRows = [...table.rows];
+    if (table.summaryRow) csvRows.push(table.summaryRow);
+    const csv = buildCsvFromRows(csvRows, keys);
+    downloadCsv(`widget-${widget.title ?? widget.id}.csv`, csv);
+    toast("Table exported to CSV");
+  };
+
+  const renderWidgetContent = (
+    widget: WidgetConfig,
+    opts?: { compactStat?: boolean }
+  ) => {
+    if (!widget.visualShape) return null;
+
+    switch (widget.visualShape) {
+      case "stat": {
+        const stat = buildStatFromWidget(data, widget);
+        if (!stat) return null;
+        return <WidgetStatCard label={stat.label} value={stat.value} compact={opts?.compactStat} />;
       }
       case "distribution":
         return (
           <StatusDistribution
-            items={data.distributions}
-            onDrillDown={
-              distributionColumnKey && onDrillDown
-                ? (value) => onDrillDown(distributionColumnKey, value)
-                : undefined
-            }
-            activeValue={distributionColumnKey ? filters[distributionColumnKey] : undefined}
+            items={buildDistributionFromWidget(data, widget)}
+            title={widget.title ?? "Distribusi"}
           />
         );
-      case "top_records":
-        return <TopRecords records={data.topRecords} />;
-      case "insights":
+      case "ranking":
         return (
-          <div className="surface-card p-5">
-            <InsightsPanel insights={data.insights} />
-          </div>
+          <TopRecords
+            records={buildTopRecordsFromWidget(data, widget)}
+            title={widget.title ?? "Ranking"}
+          />
         );
-      case "chart": {
+      case "bar":
+      case "line":
+      case "donut": {
         const chart = resolveChartForWidget(data, widget);
         if (!chart) return null;
         return (
           <ChartCard
             chart={chart}
-            controlledType={widget.chartType}
+            controlledType={widget.chartType ?? chart.type}
             showTypePicker
-            compactPicker
-            onDrillDown={chartDrill(chart)}
+            pickerStyle="select"
+            onTypeChange={(chartType: ChartType) => {
+              handleUpdateWidget(widget.id, { chartType });
+              toast("Chart type saved");
+            }}
           />
+        );
+      }
+      case "table": {
+        const table = buildTableFromWidget(data, widget);
+        if (!table.rows.length) return null;
+        return (
+          <div className="surface-card overflow-hidden p-4">
+            <div className="mb-3 flex items-start justify-between gap-2">
+              {widget.title ? (
+                <h3 className="text-sm font-semibold text-slate-900">{widget.title}</h3>
+              ) : (
+                <span />
+              )}
+              <button
+                type="button"
+                onClick={() => exportTableWidget(widget)}
+                className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
+              >
+                <Download className="h-3 w-3" />
+                CSV
+              </button>
+            </div>
+            <DataTable
+              rows={table.rows}
+              columns={table.columns}
+              canExport={false}
+              compact
+              fitContainer
+              maxColumns={0}
+              paginationMode="off"
+              summaryRow={table.summaryRow}
+            />
+          </div>
         );
       }
       default:
@@ -134,15 +188,31 @@ export function OverviewDashboard({
     }
   };
 
-  const renderWidget = (widget: WidgetConfig, animIndex = 0) => {
-    const content = renderWidgetContent(widget);
+  const renderWidget = (
+    widget: WidgetConfig,
+    animIndex = 0,
+    opts?: { compactStat?: boolean }
+  ) => {
+    const content = renderWidgetContent(widget, opts);
     if (!content) return null;
     return (
       <div
         key={widget.id}
         id={`widget-${widget.id}`}
-        className={cn("animate-fade-in-up", `stagger-${Math.min(animIndex + 1, 6)}`)}
+        className={cn(
+          "group relative animate-fade-in-up",
+          `stagger-${Math.min(animIndex + 1, 6)}`
+        )}
       >
+        <button
+          type="button"
+          onClick={() => openEditWidget(widget.id)}
+          className="absolute right-3 top-3 z-10 flex items-center gap-1.5 rounded-lg border border-slate-200/80 bg-white/95 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 shadow-sm backdrop-blur-sm transition-all hover:border-indigo-300 hover:text-indigo-700 sm:opacity-0 sm:group-hover:opacity-100"
+          aria-label={`Edit ${widget.title ?? "widget"}`}
+        >
+          <Pencil className="h-3 w-3" />
+          Edit
+        </button>
         {content}
       </div>
     );
@@ -154,22 +224,36 @@ export function OverviewDashboard({
       if (row.kind === "full") {
         const node = renderWidget(row.widgets[0], anim++);
         if (!node) return null;
-        return <div key={`row-${rowIdx}`}>{node}</div>;
+        return (
+          <div key={`row-${rowIdx}`} className="min-w-0 w-full">
+            {node}
+          </div>
+        );
       }
       if (row.kind === "hero-pair") {
         const [hero, dist] = row.widgets;
         return (
           <div key={`row-${rowIdx}`} className="grid gap-4 lg:grid-cols-5">
-            <div className="lg:col-span-3">{renderWidget(hero, anim++)}</div>
-            <div className="lg:col-span-2">{renderWidget(dist, anim++)}</div>
+            <div className="min-w-0 lg:col-span-3">{renderWidget(hero, anim++)}</div>
+            <div className="min-w-0 lg:col-span-2">{renderWidget(dist, anim++)}</div>
           </div>
         );
       }
-      const [a, b] = row.widgets;
       return (
-        <div key={`row-${rowIdx}`} className="grid gap-4 lg:grid-cols-2">
-          {renderWidget(a, anim++)}
-          {renderWidget(b, anim++)}
+        <div
+          key={`row-${rowIdx}`}
+          className={cn(
+            "grid gap-4",
+            row.statRow
+              ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+              : "grid-cols-1 lg:grid-cols-2"
+          )}
+        >
+          {row.widgets.map((widget) => (
+            <div key={widget.id} className="min-w-0">
+              {renderWidget(widget, anim++, { compactStat: row.statRow })}
+            </div>
+          ))}
         </div>
       );
     });
@@ -180,72 +264,28 @@ export function OverviewDashboard({
       <LayoutEditToolbar
         widgetCount={visible.length}
         linkCopied={linkCopied}
-        onOpenBuilder={openBuilder}
+        onOpenBuilder={() => openBuilder()}
         onCopyLink={onCopyLink}
       />
 
-      <div className="space-y-5">
-        {data.dataset && <DatasetCatalogPanel dataset={data.dataset} />}
-
-        {data.metrics && data.metrics.length > 0 && (
-          <MetricsLibraryPanel metrics={data.metrics} values={data.metricValues} />
-        )}
-
-        {onApplyTemplate && (
-          <LayoutTemplateBar
-            data={data}
-            activeTemplate={activeTemplate}
-            onApply={onApplyTemplate}
-          />
-        )}
-
-        {visible.length > 0 && (
-          <OverviewHeader
-            data={data}
-            widgetCount={visible.length}
-            mergeMode={layout.mergeMode}
-            sheetCount={sheetUrls.length}
-          />
-        )}
-
-        {layout.mergeMode && sheetUrls.length > 1 && (
-          <div className="flex items-center gap-2 rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs text-cyan-800">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-cyan-500" />
-            {sheetUrls.length} sheet digabung · {data.rows.length.toLocaleString("id-ID")} baris
-          </div>
-        )}
-
-        {visible.length === 0 ? (
-          <div className="overview-empty">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50">
-              <LayoutDashboard className="h-8 w-8 text-indigo-500" />
-            </div>
-            <h3 className="mt-5 text-lg font-semibold text-slate-900">Dashboard masih kosong</h3>
-            <p className="mx-auto mt-2 max-w-sm text-sm text-slate-500">
-              Pilih template atau tambah widget dari builder.
-            </p>
-            <button
-              type="button"
-              onClick={openBuilder}
-              className="mt-6 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500"
-            >
-              <Plus className="h-4 w-4" />
-              Mulai Atur Dashboard
-            </button>
-          </div>
-        ) : (
-          renderRows()
-        )}
-      </div>
+      {visible.length === 0 ? (
+        <OverviewEmptyRecommendations
+          data={data}
+          onOpenBuilder={() => openBuilder()}
+          onApplyTemplate={applyTemplate}
+        />
+      ) : (
+        <div className="space-y-5">{renderRows()}</div>
+      )}
 
       {visible.length > 0 && !builderOpen && (
         <button
           type="button"
-          onClick={openBuilder}
+          onClick={() => openBuilder()}
           className="layer-chat fixed bottom-24 right-6 flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition-all hover:bg-indigo-500 sm:bottom-8"
         >
           <Pencil className="h-4 w-4" />
-          <span className="hidden sm:inline">Atur</span>
+          <span className="hidden sm:inline">Edit</span>
         </button>
       )}
 
@@ -255,10 +295,17 @@ export function OverviewDashboard({
         data={data}
         sheetUrls={sheetUrls}
         syncStatus={syncStatus}
-        onClose={() => setBuilderOpen(false)}
+        initialShape={builderInitialShape}
+        initialEditWidgetId={editWidgetId}
+        onClose={() => {
+          setBuilderOpen(false);
+          setBuilderInitialShape(undefined);
+          setEditWidgetId(undefined);
+        }}
         onSave={(newLayout) => {
           onSaveLayout(newLayout);
           onSaveNow();
+          toast("Dashboard saved");
         }}
         onReset={onResetLayout}
         onAddSheet={onAddSheet}

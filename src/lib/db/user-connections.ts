@@ -1,67 +1,57 @@
-import { query } from "@/lib/db/app-pool";
+import { getPrisma } from "@/lib/db/prisma";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import type { DatabaseConnectionProfile } from "@/lib/types";
 import type { PostgresConnectionConfig } from "@/lib/connectors/postgres";
 
-interface DbConnectionRow {
+function rowToProfile(row: {
   id: string;
-  user_id: string;
   name: string;
   host: string;
   port: number;
-  database_name: string;
+  databaseName: string;
   username: string;
-  password_encrypted: string;
   ssl: boolean;
-  schema_name: string;
-  last_tested_at: string | null;
-  last_test_status: string | null;
-  last_test_message: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-function rowToProfile(row: DbConnectionRow): DatabaseConnectionProfile {
+  schemaName: string;
+  createdAt: Date;
+  lastTestedAt: Date | null;
+  lastTestStatus: string | null;
+  lastTestMessage: string | null;
+}): DatabaseConnectionProfile {
   return {
     id: row.id,
     name: row.name,
     type: "postgresql",
     host: row.host,
     port: row.port,
-    database: row.database_name,
+    database: row.databaseName,
     username: row.username,
     rememberPassword: true,
     ssl: row.ssl,
-    schema: row.schema_name,
-    createdAt: row.created_at,
-    lastTestedAt: row.last_tested_at ?? undefined,
+    schema: row.schemaName,
+    createdAt: row.createdAt.toISOString(),
+    lastTestedAt: row.lastTestedAt?.toISOString(),
     lastTestStatus:
-      row.last_test_status === "success" || row.last_test_status === "failed"
-        ? row.last_test_status
+      row.lastTestStatus === "success" || row.lastTestStatus === "failed"
+        ? row.lastTestStatus
         : undefined,
-    lastTestMessage: row.last_test_message ?? undefined,
+    lastTestMessage: row.lastTestMessage ?? undefined,
   };
 }
 
 export async function listUserDbConnections(
   userId: string
 ): Promise<DatabaseConnectionProfile[]> {
-  const res = await query<DbConnectionRow>(
-    `SELECT * FROM user_db_connections WHERE user_id = $1 ORDER BY created_at DESC`,
-    [userId]
-  );
-  return res.rows.map(rowToProfile);
+  const rows = await getPrisma().userDbConnection.findMany({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+  });
+  return rows.map(rowToProfile);
 }
 
-export async function getUserDbConnection(
-  userId: string,
-  connectionId: string
-): Promise<DbConnectionRow | null> {
-  const res = await query<DbConnectionRow>(
-    `SELECT * FROM user_db_connections WHERE user_id = $1 AND id = $2`,
-    [userId, connectionId]
-  );
-  return res.rows[0] ?? null;
+export async function getUserDbConnection(userId: string, connectionId: string) {
+  return getPrisma().userDbConnection.findFirst({
+    where: { userId, id: connectionId },
+  });
 }
 
 export async function getUserDbConnectionConfig(
@@ -73,11 +63,11 @@ export async function getUserDbConnectionConfig(
   return {
     host: row.host,
     port: row.port,
-    database: row.database_name,
+    database: row.databaseName,
     username: row.username,
-    password: decryptSecret(row.password_encrypted),
+    password: decryptSecret(row.passwordEncrypted),
     ssl: row.ssl,
-    schema: row.schema_name,
+    schema: row.schemaName,
   };
 }
 
@@ -98,65 +88,57 @@ export async function upsertUserDbConnection(
     lastTestMessage?: string;
   }
 ): Promise<DatabaseConnectionProfile> {
-  const encrypted = encryptSecret(input.password);
+  const passwordEncrypted = encryptSecret(input.password);
+  const testData = {
+    lastTestedAt: input.lastTestedAt ? new Date(input.lastTestedAt) : null,
+    lastTestStatus: input.lastTestStatus ?? null,
+    lastTestMessage: input.lastTestMessage ?? null,
+  };
+
   if (input.id) {
-    const res = await query<DbConnectionRow>(
-      `UPDATE user_db_connections SET
-        name = $3, host = $4, port = $5, database_name = $6, username = $7,
-        password_encrypted = $8, ssl = $9, schema_name = $10,
-        last_tested_at = $11, last_test_status = $12, last_test_message = $13,
-        updated_at = NOW()
-       WHERE user_id = $1 AND id = $2
-       RETURNING *`,
-      [
-        userId,
-        input.id,
-        input.name,
-        input.host,
-        input.port,
-        input.database,
-        input.username,
-        encrypted,
-        input.ssl,
-        input.schema,
-        input.lastTestedAt ?? null,
-        input.lastTestStatus ?? null,
-        input.lastTestMessage ?? null,
-      ]
-    );
-    if (!res.rows[0]) throw new Error("Koneksi tidak ditemukan");
-    return rowToProfile(res.rows[0]);
+    const existing = await getPrisma().userDbConnection.findFirst({
+      where: { id: input.id, userId },
+    });
+    if (!existing) throw new Error("Koneksi tidak ditemukan");
+
+    const row = await getPrisma().userDbConnection.update({
+      where: { id: input.id },
+      data: {
+        name: input.name,
+        host: input.host,
+        port: input.port,
+        databaseName: input.database,
+        username: input.username,
+        passwordEncrypted,
+        ssl: input.ssl,
+        schemaName: input.schema,
+        ...testData,
+      },
+    });
+    return rowToProfile(row);
   }
 
-  const res = await query<DbConnectionRow>(
-    `INSERT INTO user_db_connections (
-      user_id, name, host, port, database_name, username, password_encrypted,
-      ssl, schema_name, last_tested_at, last_test_status, last_test_message
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-    RETURNING *`,
-    [
+  const row = await getPrisma().userDbConnection.create({
+    data: {
       userId,
-      input.name,
-      input.host,
-      input.port,
-      input.database,
-      input.username,
-      encrypted,
-      input.ssl,
-      input.schema,
-      input.lastTestedAt ?? null,
-      input.lastTestStatus ?? null,
-      input.lastTestMessage ?? null,
-    ]
-  );
-  return rowToProfile(res.rows[0]);
+      name: input.name,
+      host: input.host,
+      port: input.port,
+      databaseName: input.database,
+      username: input.username,
+      passwordEncrypted,
+      ssl: input.ssl,
+      schemaName: input.schema,
+      ...testData,
+    },
+  });
+  return rowToProfile(row);
 }
 
 export async function deleteUserDbConnection(userId: string, connectionId: string) {
-  await query(`DELETE FROM user_db_connections WHERE user_id = $1 AND id = $2`, [
-    userId,
-    connectionId,
-  ]);
+  await getPrisma().userDbConnection.deleteMany({
+    where: { userId, id: connectionId },
+  });
 }
 
 export async function updateConnectionTestStatus(
@@ -165,10 +147,12 @@ export async function updateConnectionTestStatus(
   status: "success" | "failed",
   message: string
 ) {
-  await query(
-    `UPDATE user_db_connections SET
-      last_tested_at = NOW(), last_test_status = $3, last_test_message = $4, updated_at = NOW()
-     WHERE user_id = $1 AND id = $2`,
-    [userId, connectionId, status, message]
-  );
+  await getPrisma().userDbConnection.updateMany({
+    where: { userId, id: connectionId },
+    data: {
+      lastTestedAt: new Date(),
+      lastTestStatus: status,
+      lastTestMessage: message,
+    },
+  });
 }

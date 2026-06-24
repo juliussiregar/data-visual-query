@@ -9,56 +9,40 @@ import {
   X,
 } from "lucide-react";
 import type { SheetData, ViewId, DashboardLayout, DashboardAction, DataScope } from "@/lib/types";
-import { reanalyze, getFilterableColumns, type Filters } from "@/lib/filters";
-import { applyDataScope, isScopeActive, scopeLabel } from "@/lib/data-scope";
-import { loadDataScope, saveDataScope } from "@/lib/data-scope-storage";
+import { reanalyze, type Filters } from "@/lib/filters";
 import { computeDataAlerts } from "@/lib/alerts";
 import { findColumnKey, applyLayoutActions } from "@/lib/chat-actions";
-import { LinkInput } from "./LinkInput";
-import { ChartCard } from "./ChartCard";
-import { DataTable } from "./DataTable";
+import { DataViewPanel } from "./DataViewPanel";
+import { ActiveFiltersBar } from "./ActiveFiltersBar";
+import { useToast } from "./ToastProvider";
 import { FloatingChatWidget } from "./FloatingChatWidget";
-import { Sidebar, navItemsForRole } from "./Sidebar";
-import { FilterBar } from "./FilterBar";
-import { ColumnInsights } from "./ColumnInsights";
-import { DatasetCatalogPanel } from "./DatasetCatalogPanel";
-import { MetricsLibraryPanel } from "./MetricsLibraryPanel";
+import { Sidebar } from "./Sidebar";
 import { LoadingSkeleton } from "./LoadingSkeleton";
-import { LandingFeatures } from "./LandingFeatures";
-import { SectionHeader } from "./SectionHeader";
-import { SavedSheetsMenu } from "./SavedSheetsMenu";
+import { SheetManagerMenu } from "./SheetManagerMenu";
 import { InsightsPanel } from "./InsightsPanel";
-import { StatusDistribution } from "./StatusDistribution";
-import { TopRecords } from "./TopRecords";
 import { UserMenu } from "./UserMenu";
 import { LoginPage } from "./LoginPage";
-import { PeriodComparisonPanel } from "./PeriodComparisonPanel";
 import { DataSourcePanel } from "./DataSourcePanel";
-import { SqlQueryPanel } from "./SqlQueryPanel";
+import { VisualQueryPanel, VisualQueryEmptyState } from "./VisualQueryPanel";
+import {
+  EMPTY_VISUAL_QUERY,
+  applyVisualQuery,
+  isVisualQueryActive,
+  type VisualQuery,
+} from "@/lib/visual-query";
 import { AuditLogPanel } from "./AuditLogPanel";
 import { JoinFunnelBanner } from "./JoinFunnelBanner";
 import { AutoRefreshBar } from "./AutoRefreshBar";
 import { MetricGlossaryPanel } from "./MetricGlossaryPanel";
-import { DataQualityPanel } from "./DataQualityPanel";
 import { ScheduledReportBar } from "./ScheduledReportBar";
-import { CertifiedMetricsToggle } from "./CertifiedMetricsToggle";
-import {
-  getSheetFromUrl,
-  syncSheetToUrl,
-  touchSavedSheetRemote,
-  fetchSavedSheets,
-  saveSheetRemote,
-  truncateUrl,
-} from "@/lib/sheet-storage";
+import { truncateUrl } from "@/lib/sheet-storage";
 import { OverviewDashboard } from "./OverviewDashboard";
+import { ChartsGallery } from "./ChartsGallery";
 import {
   createDefaultLayout,
   mergeLayoutWithData,
-  applyLayoutTemplate,
-  type LayoutTemplateId,
+  stripLegacyStarterPack,
 } from "@/lib/layout";
-import { DrillThroughBanner } from "./DrillThroughBanner";
-import { DataScopeBar } from "./DataScopeBar";
 import { DataAlertsPanel } from "./DataAlertsPanel";
 import {
   fetchRemoteLayout,
@@ -67,7 +51,6 @@ import {
   copyDashboardShareUrl,
 } from "@/lib/layout-storage";
 import { useLayoutAutoSave, type LayoutSyncStatus } from "@/hooks/useLayoutAutoSave";
-import { getScopeFromUrl, syncScopeToUrl } from "@/lib/scope-url";
 import { rolePermissions } from "@/lib/auth";
 import { useAuth } from "@/hooks/useAuth";
 import { logAuditClient } from "@/lib/audit-log";
@@ -79,7 +62,6 @@ import {
   type SavedMetric,
 } from "@/lib/metrics-storage";
 import { computeSavedMetricValues } from "@/lib/saved-metrics";
-import { computePeriodComparison } from "@/lib/period-comparison";
 import type { JoinConfig } from "@/lib/join-sheets";
 import {
   useAutoRefresh,
@@ -94,10 +76,28 @@ import {
   saveReportScheduleMinutes,
   type ReportScheduleInterval,
 } from "@/lib/report-schedule";
+import { fetchDbConnections, connectionToApiPayload } from "@/lib/datasource-storage";
+import type { Project } from "@/lib/project-types";
 import {
-  loadCertifiedMetricsOnly,
-  saveCertifiedMetricsOnly,
-} from "@/lib/certified-metrics-mode";
+  fetchProject,
+  fetchProjects,
+  getProjectFromUrl,
+  syncProjectToUrl,
+  updateProject,
+} from "@/lib/project-storage";
+import { clearWorkspaceLocalStorage } from "@/lib/workspace-storage";
+import {
+  probeDatabaseTable,
+  probeSheetUrl,
+  projectSourceType,
+} from "@/lib/project-source-probe";
+import { AppDialog } from "./AppDialog";
+import { ProjectSelector } from "./ProjectSelector";
+import { ProjectCreateWizard } from "./ProjectCreateWizard";
+import { ProjectSettingsDialogContent } from "./ProjectSettingsDialogContent";
+import { WelcomeView } from "./WelcomeView";
+import { ViewPageShell } from "./ViewPageShell";
+import { flatNavItemsForRole, MOBILE_PRIMARY_VIEWS, navItemsForRole } from "@/lib/nav-config";
 import { cn } from "@/lib/utils";
 
 interface FunnelMetrics {
@@ -124,10 +124,8 @@ export function DashboardApp() {
   const [syncStatus, setSyncStatus] = useState<LayoutSyncStatus>("synced");
   const [linkCopied, setLinkCopied] = useState(false);
   const [heroCollapsed, setHeroCollapsed] = useState(true);
-  const [showLinkEditor, setShowLinkEditor] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [overviewBuilderOpen, setOverviewBuilderOpen] = useState(false);
-  const [activeTemplate, setActiveTemplate] = useState<LayoutTemplateId | null>(null);
   const [drillFilter, setDrillFilter] = useState<{ column: string; value: string } | null>(null);
   const [dataScope, setDataScope] = useState<DataScope | null>(null);
   const [savedMetrics, setSavedMetrics] = useState<SavedMetric[]>([]);
@@ -135,16 +133,23 @@ export function DashboardApp() {
   const [autoRefreshMinutes, setAutoRefreshMinutes] = useState<AutoRefreshInterval>(0);
   const [reportScheduleMinutes, setReportScheduleMinutes] =
     useState<ReportScheduleInterval>(0);
-  const [certifiedMetricsOnly, setCertifiedMetricsOnly] = useState(false);
   const [lastExportAt, setLastExportAt] = useState<Date | null>(null);
+  const [visualQuery, setVisualQuery] = useState<VisualQuery>(EMPTY_VISUAL_QUERY);
+  const [activeProject, setActiveProject] = useState<Project | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
+  const activeProjectRef = useRef<Project | null>(null);
+  activeProjectRef.current = activeProject;
 
   const userRole = auth.user?.role ?? "analyst";
   const perms = rolePermissions(userRole);
+  const { toast } = useToast();
 
   useEffect(() => {
     setAutoRefreshMinutes(loadAutoRefreshMinutes());
     setReportScheduleMinutes(loadReportScheduleMinutes());
-    setCertifiedMetricsOnly(loadCertifiedMetricsOnly());
   }, []);
 
   useEffect(() => {
@@ -153,23 +158,31 @@ export function DashboardApp() {
     }
   }, [activeView]);
 
-  const persistSheetOnLoad = useCallback((url: string) => {
-    syncSheetToUrl(url);
-    void touchSavedSheetRemote(url);
-    void saveSheetRemote(url);
-  }, []);
 
-  const initLayout = useCallback(async (data: SheetData, urls: string[]) => {
-    const remote = await fetchRemoteLayout(urls);
-    const base = remote
-      ? mergeLayoutWithData(remote, data)
-      : createDefaultLayout(urls, data);
-    setLayout({ ...base, sheetUrls: urls });
-    if (remote) syncLayoutKeyToUrl(getLayoutKey(urls));
-  }, []);
+  const initLayout = useCallback(
+    async (data: SheetData, urls: string[], projectLayout?: DashboardLayout | null) => {
+      let base: DashboardLayout;
+      if (projectLayout) {
+        base = stripLegacyStarterPack(mergeLayoutWithData(projectLayout, data));
+      } else {
+        const remote = await fetchRemoteLayout(urls);
+        base = remote
+          ? stripLegacyStarterPack(mergeLayoutWithData(remote, data))
+          : createDefaultLayout(urls);
+        if (remote) syncLayoutKeyToUrl(getLayoutKey(urls));
+      }
+      setLayout({ ...base, sheetUrls: urls });
+    },
+    []
+  );
 
   const loadSheets = useCallback(
-    async (urls: string[], merge = false, preserveScope = false) => {
+    async (
+      urls: string[],
+      merge = false,
+      preserveScope = false,
+      projectLayout?: DashboardLayout | null
+    ) => {
       const unique = [...new Set(urls.filter(Boolean))];
       if (unique.length === 0) return;
 
@@ -180,15 +193,10 @@ export function DashboardApp() {
       if (!preserveScope) {
         setFilters({});
         setDrillFilter(null);
+        setVisualQuery(EMPTY_VISUAL_QUERY);
       }
-      setActiveTemplate(null);
       setFunnelMetrics(null);
-      setShowLinkEditor(false);
-
-      const scopeForApi =
-        preserveScope && dataScope
-          ? dataScope
-          : getScopeFromUrl() ?? loadDataScope(unique);
+      const scopeForApi = undefined;
 
       try {
         const res = await fetch("/api/sheet", {
@@ -197,8 +205,7 @@ export function DashboardApp() {
           body: JSON.stringify({
             urls: unique,
             merge: merge || unique.length > 1,
-            join: unique.length === 2,
-            dataScope: scopeForApi,
+            join: unique.length === 2 && !merge,
           }),
         });
         const json = await res.json();
@@ -209,27 +216,23 @@ export function DashboardApp() {
         setSavedMetrics(loadSavedMetrics(unique));
         setFunnelMetrics(json.funnelMetrics ?? null);
 
-        const urlScope = getScopeFromUrl();
-        const savedScope = preserveScope ? dataScope : urlScope ?? loadDataScope(unique);
-        if (savedScope && json.columns.some((c: { key: string }) => c.key === savedScope.columnKey)) {
-          setDataScope(savedScope);
-          if (urlScope) syncScopeToUrl(savedScope);
-        } else if (!preserveScope) {
-          setDataScope(null);
-        }
+        setDataScope(null);
 
         logAuditClient("sheet_load", `Loaded ${unique.length} sheet(s)`, { rows: json.rows?.length }, userRole);
         setActiveView("overview");
         setHeroCollapsed(true);
-        persistSheetOnLoad(unique[0]);
-        await initLayout(json, unique);
+        await initLayout(
+          json,
+          unique,
+          projectLayout ?? activeProjectRef.current?.layout ?? undefined
+        );
       } catch (err) {
         setError(err instanceof Error ? err.message : "Terjadi kesalahan");
       } finally {
         setLoading(false);
       }
     },
-    [initLayout, userRole, dataScope]
+    [initLayout, userRole]
   );
 
   const loadSheet = useCallback(
@@ -237,8 +240,140 @@ export function DashboardApp() {
     [loadSheets]
   );
 
+  const refreshProjects = useCallback(async () => {
+    const list = await fetchProjects();
+    setProjects(list);
+    if (activeProjectRef.current) {
+      const fresh = list.find((p) => p.id === activeProjectRef.current?.id);
+      if (fresh) setActiveProject(fresh);
+    }
+    return list;
+  }, []);
+
+  const openProject = useCallback((project: Project) => {
+    setActiveProject(project);
+    syncProjectToUrl(project.id);
+    setSheetUrls(project.sheetUrls);
+    if (project.sheetUrls[0]) setLastUrl(project.sheetUrls[0]);
+  }, []);
+
+  const loadProjectSheets = useCallback(
+    (project: Project) => {
+      openProject(project);
+      if (project.sheetUrls.length > 0) {
+        void loadSheets(
+          project.sheetUrls,
+          project.mergeMode,
+          false,
+          project.layout ?? undefined
+        );
+        setActiveView("overview");
+      } else {
+        setActiveView("overview");
+      }
+      setHeroCollapsed(true);
+    },
+    [loadSheets, openProject]
+  );
+
+  const handleSelectProject = useCallback(
+    (project: Project) => {
+      setSheetData(null);
+      setLayout(null);
+      setFilters({});
+      openProject(project);
+      setActiveView("overview");
+    },
+    [openProject]
+  );
+
+  const handleNewProject = useCallback(() => {
+    setShowCreateDialog(true);
+  }, []);
+
+  const handleResetWorkspace = useCallback(async () => {
+    if (
+      !confirm(
+        "Reset semua data workspace?\n\nProject, sheet tersimpan, layout dashboard, dan koneksi DB akan dihapus. Akun login tetap ada."
+      )
+    ) {
+      return;
+    }
+
+    const res = await fetch("/api/user/reset-workspace", { method: "POST" });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      alert(json.error ?? "Gagal mereset data");
+      return;
+    }
+
+    clearWorkspaceLocalStorage();
+    setSheetData(null);
+    setLoading(false);
+    setError(null);
+    setActiveView("overview");
+    setFilters({});
+    setLastUrl("");
+    setSheetUrls([]);
+    setLayout(null);
+    setLinkCopied(false);
+    setHeroCollapsed(true);
+    setOverviewBuilderOpen(false);
+    setDrillFilter(null);
+    setDataScope(null);
+    setSavedMetrics([]);
+    setFunnelMetrics(null);
+    setVisualQuery(EMPTY_VISUAL_QUERY);
+    setActiveProject(null);
+    setProjects([]);
+    initRef.current = false;
+    window.location.reload();
+  }, []);
+
+  const handleSwitchSheet = useCallback(
+    (url: string) => loadSheets([url], false),
+    [loadSheets]
+  );
+
+  const handleAddSheetToMerge = useCallback(
+    (url: string) => {
+      const next = [...new Set([...sheetUrls, url])];
+      void loadSheets(next, true);
+    },
+    [sheetUrls, loadSheets]
+  );
+
+  const handleRemoveSheetFromMerge = useCallback(
+    (url: string) => {
+      const next = sheetUrls.filter((u) => u !== url);
+      if (!next.length) return;
+      void loadSheets(next, next.length > 1 && (layout?.mergeMode ?? true));
+    },
+    [sheetUrls, layout?.mergeMode, loadSheets]
+  );
+
+  const handleToggleMergeMode = useCallback(
+    (enabled: boolean) => {
+      setLayout((prev) =>
+        prev ? { ...prev, mergeMode: enabled, updatedAt: new Date().toISOString() } : prev
+      );
+      if (sheetUrls.length > 1) void loadSheets(sheetUrls, enabled);
+    },
+    [sheetUrls, loadSheets]
+  );
+
+  const handleReloadMerged = useCallback(
+    () => void loadSheets(sheetUrls, layout?.mergeMode ?? sheetUrls.length > 1),
+    [sheetUrls, layout?.mergeMode, loadSheets]
+  );
+
+  const joinModeActive = Boolean((sheetData as { joinMode?: boolean } | null)?.joinMode);
+
   const loadFromDatabase = useCallback(
-    async (data: SheetData & { sheetUrls?: string[] }) => {
+    async (
+      data: SheetData & { sheetUrls?: string[] },
+      projectLayout?: DashboardLayout | null
+    ) => {
       setLoading(true);
       setError(null);
       const urls =
@@ -248,9 +383,8 @@ export function DashboardApp() {
       setSheetUrls(urls);
       setFilters({});
       setDrillFilter(null);
-      setActiveTemplate(null);
+      setVisualQuery(EMPTY_VISUAL_QUERY);
       setFunnelMetrics(null);
-      setShowLinkEditor(false);
       setDataScope(null);
 
       try {
@@ -265,7 +399,7 @@ export function DashboardApp() {
         );
         setActiveView("overview");
         setHeroCollapsed(true);
-        await initLayout(data, urls);
+        await initLayout(data, urls, projectLayout);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Terjadi kesalahan");
       } finally {
@@ -273,6 +407,103 @@ export function DashboardApp() {
       }
     },
     [initLayout, userRole]
+  );
+
+  const loadProject = useCallback(
+    async (project: Project) => {
+      openProject(project);
+      if (project.sheetUrls.length > 0) {
+        loadProjectSheets(project);
+        return;
+      }
+
+      if (project.activeDbConnectionId && project.activeDbTable?.trim()) {
+        setError(null);
+        try {
+          const connections = await fetchDbConnections();
+          const conn = connections.find((c) => c.id === project.activeDbConnectionId);
+          if (!conn) {
+            throw new Error("Koneksi database tidak ditemukan. Tambahkan di tab Sumber.");
+          }
+          const res = await fetch("/api/datasource/load", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...connectionToApiPayload(conn, { table: project.activeDbTable!.trim() }),
+              connectionName: conn.name,
+              table: project.activeDbTable!.trim(),
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Gagal memuat tabel");
+          await loadFromDatabase(data, project.layout ?? undefined);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Gagal memuat database");
+          setActiveView("overview");
+        }
+        return;
+      }
+
+      setActiveView("overview");
+    },
+    [loadProjectSheets, loadFromDatabase, openProject]
+  );
+
+  const handleLoadActiveProject = useCallback(() => {
+    if (!activeProject) return;
+    void loadProject(activeProject);
+  }, [activeProject, loadProject]);
+
+  const handleVerifyAndLoad = useCallback(async () => {
+    if (!activeProject) return;
+    const sourceType = projectSourceType(activeProject);
+    if (!sourceType) {
+      setShowSettingsDialog(true);
+      return;
+    }
+
+    setLoadingMessage("Memeriksa koneksi…");
+    setError(null);
+
+    let ok = false;
+    if (sourceType === "sheet") {
+      const result = await probeSheetUrl(activeProject.sheetUrls[0]);
+      ok = result.ok;
+      if (!result.ok) setError(result.error);
+    } else {
+      const connections = await fetchDbConnections();
+      const conn = connections.find((c) => c.id === activeProject.activeDbConnectionId);
+      if (!conn) {
+        setError("Koneksi database tidak ditemukan");
+      } else {
+        const result = await probeDatabaseTable(conn, activeProject.activeDbTable ?? "");
+        ok = result.ok;
+        if (!result.ok) setError(result.error);
+      }
+    }
+
+    if (!ok) {
+      setLoadingMessage(null);
+      return;
+    }
+
+    setLoadingMessage("Memuat data…");
+    await loadProject(activeProject);
+    setLoadingMessage(null);
+  }, [activeProject, loadProject]);
+
+  const handleProjectCreated = useCallback(
+    (project: Project) => {
+      setProjects((prev) => [project, ...prev]);
+      setActiveProject(project);
+      syncProjectToUrl(project.id);
+      setShowCreateDialog(false);
+      setActiveView("overview");
+      setLoadingMessage("Memuat data…");
+      void loadProject(project).finally(() => setLoadingMessage(null));
+      void refreshProjects();
+    },
+    [loadProject, refreshProjects]
   );
 
   const silentReload = useCallback(() => {
@@ -296,12 +527,12 @@ export function DashboardApp() {
     saveReportScheduleMinutes(minutes);
   };
 
-  const handleCertifiedToggle = (enabled: boolean) => {
-    setCertifiedMetricsOnly(enabled);
-    saveCertifiedMetricsOnly(enabled);
-  };
-
-  const { flushSave } = useLayoutAutoSave(layout, Boolean(layout), setSyncStatus);
+  const { flushSave } = useLayoutAutoSave(
+    layout,
+    Boolean(layout),
+    setSyncStatus,
+    activeProject?.id
+  );
 
   const handleCopyLink = useCallback(async () => {
     await flushSave();
@@ -309,47 +540,53 @@ export function DashboardApp() {
     const ok = await copyDashboardShareUrl(urls);
     if (ok) {
       setLinkCopied(true);
+      toast("Dashboard link copied");
       setTimeout(() => setLinkCopied(false), 2500);
     }
-  }, [sheetUrls, lastUrl, flushSave]);
+  }, [sheetUrls, lastUrl, flushSave, toast]);
 
   useEffect(() => {
     if (!auth.user || initRef.current) return;
     initRef.current = true;
 
     const boot = async () => {
-      const fromParam = searchParams.get("sheet") || getSheetFromUrl();
-      if (fromParam) {
-        setLastUrl(fromParam);
-        loadSheet(fromParam);
-        return;
+      const list = await refreshProjects();
+
+      const projectId = searchParams.get("project") || getProjectFromUrl();
+      if (projectId) {
+        const project = list.find((p) => p.id === projectId) ?? (await fetchProject(projectId));
+        if (project) {
+          openProject(project);
+          setActiveView("overview");
+          setHeroCollapsed(true);
+          return;
+        }
       }
-      const saved = await fetchSavedSheets();
-      const url = saved[0]?.url;
-      if (url) {
-        setLastUrl(url);
-        loadSheet(url);
+
+      setActiveView("overview");
+      setHeroCollapsed(true);
+      if (list.length === 0) {
+        setShowCreateDialog(true);
+      } else {
+        openProject(list[0]);
       }
     };
     void boot();
-  }, [auth.user, searchParams, loadSheet]);
+  }, [auth.user, searchParams, openProject, refreshProjects]);
 
-  const scopedBase = useMemo(() => {
-    if (!sheetData) return null;
-    if (!isScopeActive(dataScope)) return sheetData;
-    const scopedRows = applyDataScope(sheetData.rows, dataScope);
-    return reanalyze({ ...sheetData, rows: scopedRows }, {});
-  }, [sheetData, dataScope]);
+  const scopedBase = sheetData;
+
+  const queryFilteredBase = useMemo(() => {
+    if (!scopedBase) return null;
+    if (!isVisualQueryActive(visualQuery)) return scopedBase;
+    const rows = applyVisualQuery(scopedBase.rows, visualQuery, scopedBase.columns);
+    return reanalyze({ ...scopedBase, rows }, {});
+  }, [scopedBase, visualQuery]);
 
   const displayData = useMemo(() => {
-    if (!scopedBase) return null;
-    return reanalyze(scopedBase, filters);
-  }, [scopedBase, filters]);
-
-  const periodComparison = useMemo(() => {
-    if (!displayData) return null;
-    return computePeriodComparison(displayData.rows, displayData.columns);
-  }, [displayData]);
+    if (!queryFilteredBase) return null;
+    return reanalyze(queryFilteredBase, filters);
+  }, [queryFilteredBase, filters]);
 
   const enrichedDisplayData = useMemo(() => {
     if (!displayData) return null;
@@ -375,6 +612,24 @@ export function DashboardApp() {
 
   const viewData = enrichedDisplayData ?? displayData;
 
+  const removeFilter = useCallback(
+    (columnKey: string) => {
+      setFilters((prev) => {
+        const next = { ...prev };
+        delete next[columnKey];
+        return next;
+      });
+      setDrillFilter((prev) => (prev?.column === columnKey ? null : prev));
+    },
+    []
+  );
+
+  const clearAllFilters = useCallback(() => {
+    setFilters({});
+    setDrillFilter(null);
+    toast("All filters cleared");
+  }, [toast]);
+
   const handleExportCsv = useCallback(() => {
     if (!viewData || !perms.canExport) return;
     const keys = viewData.columns.filter((c) => c.key.trim()).slice(0, 20).map((c) => c.key);
@@ -383,33 +638,16 @@ export function DashboardApp() {
     downloadCsv(`sheetvision-${stamp}.csv`, csv);
     setLastExportAt(new Date());
     logAuditClient("export_csv", `Export ${viewData.rows.length} baris`, {}, userRole);
-  }, [viewData, perms.canExport, userRole]);
+    toast("CSV exported");
+  }, [viewData, perms.canExport, userRole, toast]);
 
   const totalRowCount = sheetData?.rows.length ?? 0;
   const scopedRowCount = scopedBase?.rows.length ?? 0;
 
   const dataAlerts = useMemo(() => {
     if (!sheetData || !displayData) return [];
-    return computeDataAlerts(sheetData, displayData, filters, dataScope, scopedRowCount);
-  }, [sheetData, displayData, filters, dataScope, scopedRowCount]);
-
-  const activeScopeLabel = useMemo(
-    () => (sheetData ? scopeLabel(dataScope, sheetData.columns) : null),
-    [sheetData, dataScope]
-  );
-
-  const handleDataScopeChange = useCallback(
-    (scope: DataScope | null) => {
-      setDataScope(scope);
-      const urls = sheetUrls.length ? sheetUrls : lastUrl ? [lastUrl] : [];
-      saveDataScope(urls, scope);
-      syncScopeToUrl(scope);
-      setFilters({});
-      setDrillFilter(null);
-      logAuditClient("scope_change", scope ? `${scope.columnKey}=${scope.values.join(",")}` : "cleared", {}, userRole);
-    },
-    [sheetUrls, lastUrl, userRole]
-  );
+    return computeDataAlerts(sheetData, displayData, filters, null, scopedRowCount);
+  }, [sheetData, displayData, filters, scopedRowCount]);
 
   const handleSaveMetric = useCallback(
     (metric: SavedMetric) => {
@@ -440,42 +678,6 @@ export function DashboardApp() {
     },
     [sheetUrls, lastUrl]
   );
-
-  const filterableColumns = useMemo(
-    () => (scopedBase ? getFilterableColumns(scopedBase) : []),
-    [scopedBase]
-  );
-
-  const distributionColumnKey = useMemo(() => {
-    if (!viewData) return undefined;
-    const statusCol = viewData.columns.find((c) => /status/i.test(c.key));
-    const catCol = viewData.columns.find((c) => c.type === "category");
-    return (statusCol ?? catCol)?.key;
-  }, [viewData]);
-
-  const handleDrillDown = useCallback((columnKey: string, value: string) => {
-    setFilters((prev) => ({ ...prev, [columnKey]: value }));
-    setDrillFilter({ column: columnKey, value });
-  }, []);
-
-  const handleApplyTemplate = useCallback(
-    (templateId: LayoutTemplateId) => {
-      if (!layout || !sheetData) return;
-      const next = applyLayoutTemplate(templateId, layout, sheetData);
-      setLayout(next);
-      setActiveTemplate(templateId);
-      void flushSave();
-    },
-    [layout, sheetData, flushSave]
-  );
-
-  const handleFiltersChange = useCallback((next: Filters) => {
-    setFilters(next);
-    if (drillFilter) {
-      const stillActive = drillFilter.column in next && next[drillFilter.column] === drillFilter.value;
-      if (!stillActive) setDrillFilter(null);
-    }
-  }, [drillFilter]);
 
   const applyChatActions = useCallback(
     (actions: DashboardAction[]) => {
@@ -528,7 +730,7 @@ export function DashboardApp() {
             break;
           case "reset_layout":
             if (sheetData) {
-              setLayout(createDefaultLayout(sheetUrls, sheetData));
+              setLayout(createDefaultLayout(sheetUrls));
             }
             break;
           default:
@@ -548,172 +750,154 @@ export function DashboardApp() {
     [sheetData, sheetUrls, layout, loadSheets]
   );
 
+  const renderWelcome = () => (
+    <WelcomeView
+      project={activeProject}
+      loading={Boolean(loadingMessage || (loading && !sheetData))}
+      loadingMessage={loadingMessage ?? undefined}
+      onCreateProject={() => setShowCreateDialog(true)}
+      onOpenSettings={() => setShowSettingsDialog(true)}
+      onVerifyAndLoad={() => void handleVerifyAndLoad()}
+    />
+  );
+
   const renderView = () => {
-    if (!viewData || !sheetData) return null;
-
-    switch (activeView) {
-      case "overview":
-        if (!layout) return null;
+    if (activeView === "audit") {
+      if (!perms.canViewAudit) {
         return (
-          <div className="space-y-6">
-            {periodComparison && (
-              <PeriodComparisonPanel
-                periodColumn={periodComparison.periodColumn}
-                deltas={periodComparison.deltas}
-              />
-            )}
-            <OverviewDashboard
-              data={viewData}
-            layout={layout}
-            sheetUrls={sheetUrls}
-            syncStatus={syncStatus}
-            linkCopied={linkCopied}
-            filters={filters}
-            distributionColumnKey={distributionColumnKey}
-            activeTemplate={activeTemplate}
-            onDrillDown={handleDrillDown}
-            onApplyTemplate={handleApplyTemplate}
-            onBuilderOpenChange={setOverviewBuilderOpen}
-            onSaveLayout={setLayout}
-            onSaveNow={() => void flushSave()}
-            onResetLayout={() => {
-              if (sheetData) setLayout(createDefaultLayout(sheetUrls, sheetData));
-            }}
-            onCopyLink={() => void handleCopyLink()}
-            onAddSheet={(url) => {
-              const next = [...sheetUrls, url];
-              setSheetUrls(next);
-              setLayout((prev) =>
-                prev
-                  ? { ...prev, sheetUrls: next, mergeMode: true, updatedAt: new Date().toISOString() }
-                  : prev
-              );
-            }}
-            onRemoveSheet={(url) => {
-              const next = sheetUrls.filter((u) => u !== url);
-              setSheetUrls(next);
-              if (next.length) loadSheets(next, layout?.mergeMode);
-            }}
-            onToggleMerge={(enabled) => {
-              setLayout((prev) => (prev ? { ...prev, mergeMode: enabled } : prev));
-              if (sheetUrls.length > 1) loadSheets(sheetUrls, enabled);
-            }}
-            onReloadMerged={() => loadSheets(sheetUrls, true)}
-          />
-          </div>
-        );
-
-      case "charts":
-        return (
-          <div className="space-y-6">
-            <SectionHeader
-              title="Galeri Grafik"
-              description={`${viewData.charts.length} visualisasi · klik segmen untuk filter data`}
-            />
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              {viewData.charts.map((chart, i) => (
-                <ChartCard
-                  key={chart.id}
-                  chart={chart}
-                  defaultLarge={i === 0}
-                  className={`animate-fade-in-up stagger-${Math.min(i + 1, 6)}`}
-                  onDrillDown={(value) => handleDrillDown(chart.categoryKey, value)}
-                />
-              ))}
+          <ViewPageShell title="Audit Log" description="Akses dibatasi untuk admin.">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-8 text-center text-sm text-amber-800">
+              Anda tidak memiliki izin melihat audit log.
             </div>
-            {viewData.charts.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-slate-200 p-16 text-center text-slate-500">
-                Tidak ada grafik untuk data yang difilter.
-              </div>
-            )}
-          </div>
+          </ViewPageShell>
         );
+      }
+      return <AuditLogPanel />;
+    }
 
-      case "insights":
-        return (
-          <div className="space-y-6">
-            <InsightsPanel insights={viewData.insights} />
-            <div className="grid gap-6 lg:grid-cols-2">
-              <StatusDistribution
-                items={viewData.distributions}
-                title="Breakdown Kategori"
-                onDrillDown={
-                  distributionColumnKey
-                    ? (value) => handleDrillDown(distributionColumnKey, value)
-                    : undefined
-                }
-                activeValue={distributionColumnKey ? filters[distributionColumnKey] : undefined}
-              />
-              <TopRecords records={viewData.topRecords} title="Ranking Tertinggi" />
-            </div>
-          </div>
-        );
-
-      case "data":
-        return (
-          <DataTable
-            rows={viewData.rows}
-            columns={viewData.columns}
-            maskPII={perms.maskPII}
-            canExport={perms.canExport}
-            drillFilter={
-              drillFilter
-                ? {
-                    column: drillFilter.column,
-                    value: drillFilter.value,
-                    columnLabel:
-                      sheetData.columns.find((c) => c.key === drillFilter.column)?.label ??
-                      drillFilter.column,
-                  }
-                : undefined
-            }
-          />
-        );
-
-      case "columns":
-        return (
-          <div className="space-y-6">
-            {viewData.dataset && <DatasetCatalogPanel dataset={viewData.dataset} />}
-            {viewData.metrics && viewData.metrics.length > 0 && (
-              <MetricsLibraryPanel
-                metrics={viewData.metrics}
-                values={viewData.metricValues}
-                savedMetrics={savedMetrics}
-                canCertify={perms.canCertifyMetrics}
-                onSaveMetric={handleSaveMetric}
-                onCertifyMetric={handleCertifyMetric}
-                onRemoveMetric={handleRemoveMetric}
-              />
-            )}
-            {viewData.dataset?.quality && (
-              <DataQualityPanel report={viewData.dataset.quality} />
-            )}
-            <MetricGlossaryPanel />
-            <ColumnInsights columns={viewData.columns} />
-          </div>
-        );
-
-      case "sources":
-        return (
+    if (activeView === "sources") {
+      return (
+        <div className="space-y-4">
           <DataSourcePanel
             role={userRole}
             onLoadToDashboard={loadFromDatabase}
             onLoadingChange={setLoading}
           />
+          <MetricGlossaryPanel />
+        </div>
+      );
+    }
+
+    if (!viewData || !sheetData) {
+      return renderWelcome();
+    }
+
+    switch (activeView) {
+      case "overview":
+        if (!layout) return null;
+        return (
+          <OverviewDashboard
+            data={sheetData}
+            layout={layout}
+            sheetUrls={sheetUrls}
+            syncStatus={syncStatus}
+            linkCopied={linkCopied}
+            onBuilderOpenChange={setOverviewBuilderOpen}
+            onSaveLayout={setLayout}
+            onSaveNow={() => void flushSave()}
+            onResetLayout={() => {
+              if (sheetData) {
+                const next = createDefaultLayout(sheetUrls);
+                setLayout(next);
+                if (activeProject) {
+                  void updateProject(activeProject.id, { layout: next });
+                  setActiveProject({ ...activeProject, layout: next });
+                }
+              }
+            }}
+            onCopyLink={() => void handleCopyLink()}
+            onAddSheet={handleAddSheetToMerge}
+            onRemoveSheet={handleRemoveSheetFromMerge}
+            onToggleMerge={handleToggleMergeMode}
+            onReloadMerged={handleReloadMerged}
+          />
         );
 
-      case "sql":
-        return <SqlQueryPanel role={userRole} />;
+      case "charts":
+        return (
+          <ChartsGallery
+            data={sheetData}
+            onDrillDown={(column, value) => {
+              setFilters((prev) => ({ ...prev, [column]: value }));
+              setDrillFilter({ column, value });
+              setActiveView("data");
+              toast(`Filter applied: ${value}`, "info");
+            }}
+            onGoOverview={() => setActiveView("overview")}
+          />
+        );
+
+      case "data":
+      case "columns":
+        return (
+          <DataViewPanel
+            sheetData={viewData}
+            maskPII={perms.maskPII}
+            canExport={perms.canExport}
+            savedMetrics={savedMetrics}
+            canCertifyMetrics={perms.canCertifyMetrics}
+            onSaveMetric={handleSaveMetric}
+            onCertifyMetric={handleCertifyMetric}
+            onRemoveMetric={handleRemoveMetric}
+          />
+        );
+
+      case "insights":
+        return (
+          <ViewPageShell title="Insight" description="Ringkasan temuan otomatis dari data">
+            <InsightsPanel insights={viewData.insights} />
+          </ViewPageShell>
+        );
+
+      case "query":
+        if (!scopedBase) return renderWelcome();
+        return (
+          <ViewPageShell
+            title="Cari Data"
+            description="Susun filter visual tanpa menulis kode"
+          >
+            <VisualQueryPanel
+              data={scopedBase}
+              query={visualQuery}
+              onChange={setVisualQuery}
+              onApplyToDashboard={() => setActiveView("overview")}
+              onClear={() => setVisualQuery(EMPTY_VISUAL_QUERY)}
+              maskPII={perms.maskPII}
+              canExport={perms.canExport}
+            />
+          </ViewPageShell>
+        );
+
+      case "projects":
+        return renderWelcome();
 
       default:
         return null;
     }
   };
 
+  const inDataDashboard = Boolean(sheetData && viewData);
+  const showFiltersBar =
+    inDataDashboard &&
+    ["overview", "charts", "data", "query"].includes(activeView) &&
+    Object.values(filters).some((v) => v.trim());
+  const showAppShell = Boolean(auth.user);
+
   if (auth.loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-100">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+      <div className="app-loading">
+        <div className="app-loading-spinner" />
+        <p className="text-sm text-slate-500">Memuat sesi…</p>
       </div>
     );
   }
@@ -730,125 +914,83 @@ export function DashboardApp() {
 
   return (
     <div className={cn("page-shell", sheetData && "page-shell--dashboard")}>
-      {/* Landing hero — collapses when data loaded */}
-      <section
-        className={cn(
-          "relative border-b border-slate-200/80 bg-white/60 backdrop-blur-sm transition-all duration-500",
-          sheetData && heroCollapsed && !showLinkEditor ? "hidden" : "block"
-        )}
-      >
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -left-32 top-0 h-72 w-72 rounded-full bg-indigo-200/40 blur-3xl" />
-          <div className="absolute -right-32 top-10 h-64 w-64 rounded-full bg-violet-200/30 blur-3xl" />
-        </div>
-
-        <div className="relative mx-auto max-w-3xl px-4 pb-12 pt-12 sm:px-6">
-          <div className="mb-8 text-center">
-            <span className="badge badge-primary mb-5">
-              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-              SheetVision
-            </span>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
-              Ubah Google Sheet jadi{" "}
-              <span className="text-indigo-600">Dashboard Interaktif</span>
-            </h1>
-            <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-slate-500 sm:text-base">
-              {showLinkEditor
-                ? "Masukkan link baru atau pilih dari link tersimpan."
-                : "Paste link, dapatkan multi-view dashboard. Link otomatis tersimpan di browser & URL."}
-            </p>
-          </div>
-
-          <div className="flex justify-center">
-            <LinkInput onSubmit={loadSheet} loading={loading} initialUrl={lastUrl} />
-          </div>
-
-          {sheetData && showLinkEditor && (
-            <div className="mt-4 flex justify-center">
-              <button
-                type="button"
-                onClick={() => setShowLinkEditor(false)}
-                className="text-xs text-slate-500 hover:text-slate-900"
-              >
-                ← Kembali ke dashboard
-              </button>
-            </div>
-          )}
-
-          {error && (
-            <div className="mx-auto mt-4 max-w-3xl rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-center text-sm text-red-600">
-              {error}
-            </div>
-          )}
-
-          {!sheetData && (
-            <div className="mt-6 flex justify-center">
-              <SavedSheetsMenu
-                currentUrl={lastUrl || undefined}
-                onSelect={loadSheet}
-                onChangeLink={() => {
-                  document.getElementById("sheet-link-input")?.focus();
-                }}
-              />
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* Compact header when data loaded */}
-      {sheetData && (
-        <header className="layer-header sticky top-0 border-b border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-md">
+      {showAppShell && (
+        <header className="layer-header sticky top-0 z-20 border-b border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-md">
           <div className="flex items-center justify-between gap-4 px-4 py-2.5 sm:px-5">
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
               <button
                 onClick={() => setMobileNav(!mobileNav)}
                 className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 lg:hidden"
               >
                 {mobileNav ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
               </button>
-              <div className="hidden h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 sm:flex">
+              <div className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-600 to-violet-600 sm:flex">
                 <span className="text-xs font-bold text-white">SV</span>
               </div>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold leading-none text-slate-900">SheetVision</p>
-                <p className="mt-1 truncate text-[11px] text-slate-500" title={lastUrl}>
-                  {displayData?.rows.length ?? 0}
-                  {isScopeActive(dataScope) && totalRowCount > 0
-                    ? ` / ${scopedRowCount} scoped`
-                    : ""}{" "}
-                  baris
-                  {lastUrl && ` · ${truncateUrl(lastUrl, 32)}`}
+              <ProjectSelector
+                projects={projects}
+                activeProject={activeProject}
+                onSelect={(p) => handleSelectProject(p)}
+                onCreate={handleNewProject}
+                onSettings={() => setShowSettingsDialog(true)}
+              />
+              {inDataDashboard && (
+                <p className="hidden truncate text-[11px] text-slate-500 md:block">
+                  {displayData?.rows.length.toLocaleString("id-ID")} baris
+                  {sheetData?.dataset?.name ? ` · ${sheetData.dataset.name}` : ""}
                 </p>
-              </div>
+              )}
             </div>
 
             <div className="flex shrink-0 items-center gap-1.5">
-              <UserMenu user={auth.user} onLogout={() => void auth.logout()} />
-              <SavedSheetsMenu
-                currentUrl={lastUrl}
-                onSelect={loadSheet}
-                onChangeLink={() => {
-                  setShowLinkEditor(true);
-                  setHeroCollapsed(false);
-                }}
+              <UserMenu
+                user={auth.user}
+                onLogout={() => void auth.logout()}
+                onOpenSettings={() => setShowSettingsDialog(true)}
+                onResetWorkspace={() => void handleResetWorkspace()}
               />
-              <button
-                onClick={() => loadSheet(lastUrl)}
-                disabled={loading}
-                className="btn-ghost disabled:opacity-50"
-              >
-                <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-                <span className="hidden sm:inline">Refresh</span>
-              </button>
-              <a
-                href={sheetData.sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-ghost"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Sheet</span>
-              </a>
+              {sheetData && (
+                <>
+                  <SheetManagerMenu
+                    sheetUrls={sheetUrls.length ? sheetUrls : lastUrl ? [lastUrl] : []}
+                    projectSheetUrls={activeProject?.sheetUrls ?? sheetUrls}
+                    projectId={activeProject?.id ?? null}
+                    sheetLabels={(sheetData as { sheetLabels?: Record<string, string> } | null)?.sheetLabels}
+                    mergeMode={layout?.mergeMode ?? sheetUrls.length > 1}
+                    joinMode={joinModeActive}
+                    loading={loading}
+                    onSwitchSheet={handleSwitchSheet}
+                    onAddSheet={handleAddSheetToMerge}
+                    onRemoveSheet={handleRemoveSheetFromMerge}
+                    onToggleMerge={handleToggleMergeMode}
+                    onReload={handleReloadMerged}
+                    onOpenSettings={() => setShowSettingsDialog(true)}
+                  />
+                  <button
+                    onClick={() =>
+                      void loadSheets(
+                        sheetUrls.length ? sheetUrls : [lastUrl],
+                        layout?.mergeMode ?? sheetUrls.length > 1,
+                        true
+                      )
+                    }
+                    disabled={loading}
+                    className="btn-ghost disabled:opacity-50"
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+                    <span className="hidden sm:inline">Refresh</span>
+                  </button>
+                  <a
+                    href={sheetData.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-ghost"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Sheet</span>
+                  </a>
+                </>
+              )}
             </div>
           </div>
           {error && (
@@ -859,22 +1001,22 @@ export function DashboardApp() {
         </header>
       )}
 
-      {loading && (
+      {loading && sheetData && (
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
           <LoadingSkeleton />
         </div>
       )}
 
-      {sheetData && viewData && !loading && !showLinkEditor && (
+      {showAppShell && (
         <div className="flex min-h-[calc(100vh-4rem)]">
           <Sidebar
             active={activeView}
             onChange={setActiveView}
-            rowCount={viewData.rows.length}
-            scopeLabel={activeScopeLabel}
+            hasData={inDataDashboard}
+            rowCount={viewData?.rows.length ?? 0}
+            scopeLabel={null}
             role={userRole}
-            footer={perms.canViewAudit ? <AuditLogPanel /> : undefined}
-            className="hidden w-56 shrink-0 lg:flex"
+            className="hidden w-[220px] shrink-0 lg:flex"
           />
 
           {/* Mobile nav overlay */}
@@ -890,56 +1032,68 @@ export function DashboardApp() {
                   setActiveView(v);
                   setMobileNav(false);
                 }}
-                rowCount={viewData.rows.length}
-                scopeLabel={activeScopeLabel}
+                hasData={inDataDashboard}
+                rowCount={viewData?.rows.length ?? 0}
+                scopeLabel={null}
                 role={userRole}
-                className="absolute left-0 top-0 h-full w-64"
+                className="absolute left-0 top-0 h-full w-[260px]"
               />
             </div>
           )}
 
           <main className="flex-1 overflow-y-auto bg-slate-100/50">
             <div className="mx-auto max-w-7xl space-y-5 p-4 sm:p-5 lg:p-6">
+              {error && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                  {error}
+                </div>
+              )}
+
               <div className="flex gap-1 overflow-x-auto rounded-xl border border-slate-200/80 bg-white p-1 shadow-sm lg:hidden">
-                {navItemsForRole(userRole).map((item) => (
+                {flatNavItemsForRole(userRole)
+                  .filter((item) => MOBILE_PRIMARY_VIEWS.includes(item.id))
+                  .map((item) => {
+                  const locked = Boolean(item.requiresData && !inDataDashboard);
+                  return (
                   <button
                     key={item.id}
-                    onClick={() => setActiveView(item.id)}
+                    onClick={() => setActiveView(locked ? "overview" : item.id)}
                     className={cn(
                       "flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-all",
                       activeView === item.id
                         ? "bg-indigo-600 text-white shadow-sm"
-                        : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                        : locked
+                          ? "text-slate-400"
+                          : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
                     )}
                   >
                     <item.icon className="h-3.5 w-3.5" />
                     {item.label}
                   </button>
-                ))}
+                  );
+                })}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <AutoRefreshBar
-                  intervalMinutes={autoRefreshMinutes}
-                  onIntervalChange={handleAutoRefreshChange}
-                  lastRefreshAt={lastRefreshAt}
-                  refreshing={refreshing || loading}
-                  onRefreshNow={() => void runRefresh()}
-                />
-                <ScheduledReportBar
-                  intervalMinutes={reportScheduleMinutes}
-                  onIntervalChange={handleReportScheduleChange}
-                  onExport={handleExportCsv}
-                  lastExportAt={lastExportAt}
-                  canExport={perms.canExport}
-                />
-                <CertifiedMetricsToggle
-                  enabled={certifiedMetricsOnly}
-                  onChange={handleCertifiedToggle}
-                />
-              </div>
+              {inDataDashboard && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <AutoRefreshBar
+                    intervalMinutes={autoRefreshMinutes}
+                    onIntervalChange={handleAutoRefreshChange}
+                    lastRefreshAt={lastRefreshAt}
+                    refreshing={refreshing || loading}
+                    onRefreshNow={() => void runRefresh()}
+                  />
+                  <ScheduledReportBar
+                    intervalMinutes={reportScheduleMinutes}
+                    onIntervalChange={handleReportScheduleChange}
+                    onExport={handleExportCsv}
+                    lastExportAt={lastExportAt}
+                    canExport={perms.canExport}
+                  />
+                </div>
+              )}
 
-              {funnelMetrics && (
+              {inDataDashboard && funnelMetrics && (
                 <JoinFunnelBanner
                   joinConfig={funnelMetrics.joinConfig}
                   totalPengajuan={funnelMetrics.totalPengajuan}
@@ -949,58 +1103,24 @@ export function DashboardApp() {
                 />
               )}
 
-              {sheetData && (
-                <DataScopeBar
-                  columns={sheetData.columns}
-                  rows={scopedBase?.rows ?? sheetData.rows}
-                  scope={dataScope}
-                  totalRows={totalRowCount}
-                  scopedRows={scopedRowCount}
-                  onChange={handleDataScopeChange}
-                />
-              )}
-
-              {dataAlerts.length > 0 && (
+              {inDataDashboard && dataAlerts.length > 0 && (
                 <DataAlertsPanel
                   alerts={dataAlerts}
                   onRefresh={() => loadSheet(lastUrl)}
                 />
               )}
 
-              {(filterableColumns.length > 0 || drillFilter) && activeView !== "columns" && (
-                <div className="space-y-2">
-                  {drillFilter && (
-                    <DrillThroughBanner
-                      columnLabel={
-                        sheetData.columns.find((c) => c.key === drillFilter.column)?.label ??
-                        drillFilter.column
-                      }
-                      value={drillFilter.value}
-                      rowCount={viewData.rows.length}
-                      onViewData={() => setActiveView("data")}
-                      onClear={() => {
-                        setFilters((prev) => {
-                          const next = { ...prev };
-                          delete next[drillFilter.column];
-                          return next;
-                        });
-                        setDrillFilter(null);
-                      }}
-                    />
-                  )}
-                  {filterableColumns.length > 0 && (
-                    <FilterBar
-                      columns={filterableColumns}
-                      filters={filters}
-                      onChange={handleFiltersChange}
-                      rows={scopedBase?.rows ?? sheetData.rows}
-                      totalRows={scopedRowCount}
-                    />
-                  )}
-                </div>
+              {showFiltersBar && sheetData && viewData && (
+                <ActiveFiltersBar
+                  filters={filters}
+                  columns={sheetData.columns}
+                  rowCount={viewData.rows.length}
+                  onRemove={removeFilter}
+                  onClearAll={clearAllFilters}
+                />
               )}
 
-              <div key={`${activeView}-${JSON.stringify(filters)}`} className="animate-fade-in">
+              <div key={activeView} className="animate-fade-in">
                 {renderView()}
               </div>
             </div>
@@ -1014,7 +1134,6 @@ export function DashboardApp() {
               dataScope={dataScope}
               totalRowCount={totalRowCount}
               userRole={userRole}
-              certifiedMetricsOnly={certifiedMetricsOnly}
               layout={layout}
               sheetUrls={sheetUrls}
               onApplyActions={applyChatActions}
@@ -1023,7 +1142,43 @@ export function DashboardApp() {
         </div>
       )}
 
-      {!sheetData && !loading && !error && <LandingFeatures />}
+      <AppDialog
+        open={showCreateDialog}
+        onClose={() => setShowCreateDialog(false)}
+        title="Project baru"
+        description="Nama, sumber data, lalu kami cek koneksi otomatis"
+        size="lg"
+      >
+        <ProjectCreateWizard
+          compact
+          onCreated={handleProjectCreated}
+          onCancel={() => setShowCreateDialog(false)}
+        />
+      </AppDialog>
+
+      {activeProject && (
+        <AppDialog
+          open={showSettingsDialog}
+          onClose={() => setShowSettingsDialog(false)}
+          title="Atur sumber data"
+          description={activeProject.name}
+          size="lg"
+        >
+          <ProjectSettingsDialogContent
+            project={activeProject}
+            onUpdated={(p) => {
+              setActiveProject(p);
+              setProjects((prev) => prev.map((x) => (x.id === p.id ? p : x)));
+            }}
+            onLoad={() => {
+              setShowSettingsDialog(false);
+              void handleVerifyAndLoad();
+            }}
+            loading={loading}
+          />
+        </AppDialog>
+      )}
+
     </div>
   );
 }

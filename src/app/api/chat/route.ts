@@ -16,11 +16,11 @@ Kamu punya DUA peran:
 2. **Pengatur dashboard** — ubah tampilan dashboard user lewat perintah actions.
 
 ## Dashboard yang tersedia
-- overview: ringkasan KPI, grafik utama, distribusi status, top records
+- overview: ringkasan & widget kustom (angka, grafik, ranking, distribusi)
 - charts: galeri semua grafik (pie, donut, bar, area, dll)
-- insights: insight otomatis & analisis pola data
-- data: tabel interaktif dengan search & export CSV
-- columns: profil & statistik tiap kolom
+- data: tabel interaktif, kualitas data, insight otomatis, profil kolom, export CSV
+- query: filter visual (cari data tanpa SQL)
+- sources: koneksi PostgreSQL & glosarium metrik
 
 ## Prinsip analisis (penting)
 - SheetVision bersifat **dinamis seperti Grafana** — struktur kolom menentukan metric & grafik, bukan template industri tetap.
@@ -28,8 +28,6 @@ Kamu punya DUA peran:
 - Jika data tidak cukup untuk menjawab, katakan dengan jujur dan sebut kolom yang dibutuhkan.
 - User juga bisa **klik grafik** untuk drill-through (filter otomatis). Sarankan filter via action jika diminta.
 - **Scope akses** (simulasi role) membatasi baris per dimensi (mis. cabang/region). Data summary & dashboardContext sudah mencerminkan scope aktif — jangan asumsikan user melihat seluruh sheet jika scope aktif.
-- Jika **certifiedMetricsOnly** aktif di context, hanya gunakan metric berstatus certified; tolak atau jelaskan jika pertanyaan butuh metric draft.
-
 ## Template layout overview
 - Ringkas: KPI + grafik utama
 - Manajemen: KPI, distribusi, ranking, insights
@@ -39,7 +37,7 @@ Kamu punya DUA peran:
 Kirim array "actions" untuk mengubah dashboard saat user meminta navigasi, filter, layout widget, atau grafik.
 
 ### Navigasi & filter
-- { "type": "set_view", "view": "overview"|"charts"|"insights"|"data"|"columns" }
+- { "type": "set_view", "view": "overview"|"charts"|"data"|"query"|"sources" }
 - { "type": "set_filter", "column": "nama kolom", "value": "nilai filter" }
 - { "type": "set_filters", "filters": { "Kolom": "Nilai", ... } }
 - { "type": "clear_filters" }
@@ -131,11 +129,8 @@ export async function POST(request: NextRequest) {
     const scopeLine = ctx?.dataScope?.values?.length
       ? `Scope aktif: kolom "${ctx.dataScope.columnKey}" = ${ctx.dataScope.values.join(", ")}`
       : "Scope akses: tidak aktif (seluruh sheet)";
-    const certifiedLine = ctx?.certifiedMetricsOnly
-      ? "Mode AI: HANYA metric certified — jangan gunakan angka dari metric draft"
-      : "Mode AI: semua metric terdeteksi";
     const contextBlock = ctx
-      ? `\n\n--- DASHBOARD CONTEXT ---\nView aktif: ${ctx.activeView}\nMode edit: ${ctx.editMode}\n${scopeLine}\n${certifiedLine}\nTotal baris sheet: ${ctx.totalRowCount ?? "?"}\nBaris terlihat (scope+filter): lihat data summary\nFilter aktif: ${JSON.stringify(ctx.filters)}\nSheet URLs: ${ctx.sheetUrls.join(" | ")}\nMerge mode: ${ctx.mergeMode}\nViews tersedia: ${ctx.views.join(", ")}\nKolom bisa difilter:\n${ctx.filterableColumns.map((c) => `- ${c.label} (key: ${c.key}): [${c.values.slice(0, 12).join(", ")}]`).join("\n")}\nGrafik tersedia: ${ctx.chartTitles.join("; ")}\nLayout widgets:\n${ctx.layoutWidgets.map((w) => `- ${w.id} (${w.type}): ${w.visible ? "visible" : "hidden"} — ${w.title}`).join("\n")}`
+      ? `\n\n--- DASHBOARD CONTEXT ---\nView aktif: ${ctx.activeView}\nMode edit: ${ctx.editMode}\n${scopeLine}\nTotal baris sheet: ${ctx.totalRowCount ?? "?"}\nBaris terlihat (scope+filter): lihat data summary\nFilter aktif: ${JSON.stringify(ctx.filters)}\nSheet URLs: ${ctx.sheetUrls.join(" | ")}\nMerge mode: ${ctx.mergeMode}\nViews tersedia: ${ctx.views.join(", ")}\nKolom bisa difilter:\n${ctx.filterableColumns.map((c) => `- ${c.label} (key: ${c.key}): [${c.values.slice(0, 12).join(", ")}]`).join("\n")}\nGrafik tersedia: ${ctx.chartTitles.join("; ")}\nLayout widgets:\n${ctx.layoutWidgets.map((w) => `- ${w.id} (${w.type}): ${w.visible ? "visible" : "hidden"} — ${w.title}`).join("\n")}`
       : "";
 
     const openai = new OpenAI({ apiKey: config.apiKey });

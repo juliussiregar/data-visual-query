@@ -21,7 +21,7 @@ export function MetricGlossaryPanel() {
   return (
     <section className="surface-section p-4 sm:p-5">
       <SectionHeader
-        title="Metric Glossary"
+        title="Glosarium Metrik"
         description={
           <span className="inline-flex items-center gap-1.5">
             <BookOpen className="h-3.5 w-3.5 text-indigo-500" />

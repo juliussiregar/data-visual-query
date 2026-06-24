@@ -2,7 +2,7 @@ import type { UserRole } from "@/lib/auth";
 
 export interface AuthUser {
   id: string;
-  email: string;
+  username: string;
   name: string;
   role: UserRole;
 }

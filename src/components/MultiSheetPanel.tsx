@@ -1,10 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Layers, X } from "lucide-react";
 import type { DashboardLayout } from "@/lib/types";
-import type { SavedSheet } from "@/lib/sheet-storage";
-import { fetchSavedSheets } from "@/lib/sheet-storage";
 
 interface MultiSheetPanelProps {
   layout: DashboardLayout;
@@ -25,19 +23,13 @@ export function MultiSheetPanel({
 }: MultiSheetPanelProps) {
   const [open, setOpen] = useState(false);
   const [sheetInput, setSheetInput] = useState("");
-  const [savedSheets, setSavedSheets] = useState<SavedSheet[]>([]);
-
-  useEffect(() => {
-    if (!open) return;
-    void fetchSavedSheets().then(setSavedSheets);
-  }, [open]);
 
   if (!open) {
     return (
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 py-3 text-xs text-slate-500 hover:border-cyan-500/30 hover:text-cyan-300"
+        className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 py-3 text-xs text-slate-500 transition-colors hover:border-indigo-300 hover:bg-indigo-50/50 hover:text-indigo-700"
       >
         <Layers className="h-3.5 w-3.5" />
         Gabung beberapa Google Sheet (opsional)
@@ -46,25 +38,25 @@ export function MultiSheetPanel({
   }
 
   return (
-    <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3">
+    <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3">
       <div className="mb-2 flex items-center justify-between">
         <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-900">
-          <Layers className="h-3.5 w-3.5 text-cyan-400" />
+          <Layers className="h-3.5 w-3.5 text-indigo-600" />
           Gabung Sheet
         </p>
-        <button type="button" onClick={() => setOpen(false)} className="text-slate-500 hover:text-slate-900">
+        <button type="button" onClick={() => setOpen(false)} className="rounded-md p-0.5 text-slate-400 hover:bg-white hover:text-slate-700">
           <X className="h-4 w-4" />
         </button>
       </div>
-      <p className="mb-3 text-[10px] text-slate-500">
-        Untuk membandingkan atau menggabungkan data dari lebih dari satu sheet
+      <p className="mb-3 text-[10px] leading-relaxed text-slate-500">
+        Bandingkan atau gabungkan data dari lebih dari satu sheet
       </p>
       <label className="mb-3 flex items-center gap-2 text-xs text-slate-600">
         <input
           type="checkbox"
           checked={layout.mergeMode}
           onChange={(e) => onToggleMerge(e.target.checked)}
-          className="rounded accent-cyan-500"
+          className="rounded accent-indigo-600"
         />
         Gabungkan semua sheet jadi satu tabel
       </label>
@@ -72,14 +64,14 @@ export function MultiSheetPanel({
         {sheetUrls.map((url) => (
           <li
             key={url}
-            className="flex items-center justify-between gap-2 rounded-lg bg-slate-500 px-2 py-1.5 text-[10px] text-slate-400"
+            className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[10px] text-slate-600"
           >
             <span className="truncate">{url}</span>
             {sheetUrls.length > 1 && (
               <button
                 type="button"
                 onClick={() => onRemoveSheet(url)}
-                className="shrink-0 text-red-400 hover:text-red-600"
+                className="shrink-0 font-medium text-red-500 hover:text-red-700"
               >
                 Hapus
               </button>
@@ -92,7 +84,7 @@ export function MultiSheetPanel({
           value={sheetInput}
           onChange={(e) => setSheetInput(e.target.value)}
           placeholder="Paste link sheet kedua..."
-          className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs text-slate-900"
+          className="input-field min-w-0 flex-1 py-2 text-xs"
         />
         <button
           type="button"
@@ -102,29 +94,16 @@ export function MultiSheetPanel({
               setSheetInput("");
             }
           }}
-          className="shrink-0 rounded-lg bg-cyan-500/20 px-3 py-2 text-xs text-cyan-200"
+          className="shrink-0 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-500"
         >
           Tambah
         </button>
       </div>
-      {savedSheets
-        .filter((s) => !sheetUrls.includes(s.url))
-        .slice(0, 4)
-        .map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => onAddSheet(s.url)}
-            className="mt-2 mr-1 inline-block rounded-md border border-slate-200 px-2 py-0.5 text-[10px] text-slate-400 hover:border-cyan-500/30"
-          >
-            + {s.label}
-          </button>
-        ))}
       {layout.mergeMode && sheetUrls.length > 1 && (
         <button
           type="button"
           onClick={onReloadMerged}
-          className="mt-2 block text-[10px] text-cyan-300 hover:underline"
+          className="mt-2 block text-[10px] font-medium text-indigo-600 hover:underline"
         >
           Muat ulang data gabungan
         </button>

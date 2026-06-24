@@ -3,7 +3,10 @@ import type { ColumnMeta, SheetData } from "./types";
 
 const SOURCE_COL = "_sheet";
 
-export function mergeSheetDataSet(datasets: SheetData[]): SheetData {
+export function mergeSheetDataSet(
+  datasets: SheetData[],
+  urlLabels?: Record<string, string>
+): SheetData {
   if (datasets.length === 0) {
     throw new Error("Tidak ada data sheet untuk digabungkan");
   }
@@ -17,7 +20,7 @@ export function mergeSheetDataSet(datasets: SheetData[]): SheetData {
 
   const mergedRows: Record<string, string>[] = [];
   for (const ds of datasets) {
-    const label = deriveSheetShortLabel(ds.sourceUrl);
+    const label = urlLabels?.[ds.sourceUrl] ?? ds.dataset?.name ?? "Google Sheet";
     for (const row of ds.rows) {
       const merged: Record<string, string> = { [SOURCE_COL]: label };
       for (const key of allKeys) {
@@ -30,12 +33,13 @@ export function mergeSheetDataSet(datasets: SheetData[]): SheetData {
 
   const sourceUrls = datasets.map((d) => d.sourceUrl).join(" | ");
   const fetchedAt = datasets[0]?.fetchedAt ?? new Date().toISOString();
-  return analyzeSheetData(mergedRows, sourceUrls, fetchedAt, { mergeMode: true });
-}
-
-function deriveSheetShortLabel(url: string): string {
-  const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
-  return match ? `Sheet ${match[1].slice(0, 8)}` : "Sheet";
+  const mergeName = datasets
+    .map((d) => urlLabels?.[d.sourceUrl] ?? d.dataset?.name ?? "Google Sheet")
+    .join(" + ");
+  return analyzeSheetData(mergedRows, sourceUrls, fetchedAt, {
+    mergeMode: true,
+    displayName: mergeName,
+  });
 }
 
 export function getMergeSourceColumn(columns: ColumnMeta[]): ColumnMeta | undefined {

@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { DashboardApp } from "@/components/DashboardApp";
+import { ToastProvider } from "@/components/ToastProvider";
 
 function LoadingFallback() {
   return (
@@ -12,7 +13,9 @@ function LoadingFallback() {
 export default function Home() {
   return (
     <Suspense fallback={<LoadingFallback />}>
-      <DashboardApp />
+      <ToastProvider>
+        <DashboardApp />
+      </ToastProvider>
     </Suspense>
   );
 }

@@ -115,7 +115,7 @@ export interface ChartConfig {
   type: ChartType;
   categoryKey: string;
   valueKey?: string;
-  aggregation: "count" | "sum" | "avg";
+  aggregation: "count" | "sum" | "avg" | "min" | "max";
   data: ChartDataPoint[];
   description?: string;
   featured?: boolean;
@@ -220,7 +220,16 @@ export interface ChatMessage {
   };
 }
 
-export type ViewId = "overview" | "charts" | "insights" | "data" | "columns" | "sources" | "sql";
+export type ViewId =
+  | "overview"
+  | "charts"
+  | "insights"
+  | "data"
+  | "columns"
+  | "projects"
+  | "sources"
+  | "query"
+  | "audit";
 
 export type WidgetType =
   | "kpis"
@@ -236,12 +245,53 @@ export interface WidgetConfig {
   visible: boolean;
   order: number;
   span?: 1 | 2 | 3;
+  /** Preferred width on the overview dashboard */
+  layoutWidth?: "full" | "half";
   chartId?: string;
   chartType?: ChartType;
   categoryKey?: string;
   valueKey?: string;
-  aggregation?: "count" | "sum" | "avg";
+  aggregation?: "count" | "sum" | "avg" | "min" | "max";
   title?: string;
+  /** Bentuk visual yang dipilih user (builder langkah 1) */
+  visualShape?: WidgetVisualShape;
+  /** Konfigurasi data: filter, group by, agregasi */
+  dataQuery?: WidgetDataQuery;
+}
+
+export type WidgetVisualShape =
+  | "stat"
+  | "bar"
+  | "line"
+  | "donut"
+  | "ranking"
+  | "distribution"
+  | "table";
+
+export type WidgetAggregation = "count" | "sum" | "avg" | "min" | "max";
+
+export interface WidgetDataQuery {
+  conditions: import("./visual-query").QueryCondition[];
+  groupByKey?: string;
+  measureKey?: string;
+  aggregation: WidgetAggregation;
+  sort?: import("./visual-query").QuerySort | null;
+  limit?: number;
+  /** Table widget: which columns to display */
+  displayColumns?: string[];
+  /** Table widget: optional summary row at the bottom */
+  tableSummary?: TableSummaryConfig;
+}
+
+export type TableSummaryScope = "all_numeric" | "selected";
+
+export interface TableSummaryConfig {
+  enabled: boolean;
+  aggregation: WidgetAggregation;
+  /** all_numeric = every numeric column in the table; selected = pick columns */
+  scope: TableSummaryScope;
+  columnKeys?: string[];
+  label?: string;
 }
 
 export interface DashboardLayout {
@@ -314,7 +364,6 @@ export interface DashboardContext {
   dataScope: DataScope | null;
   totalRowCount: number;
   userRole: "viewer" | "analyst" | "admin";
-  certifiedMetricsOnly: boolean;
   views: ViewId[];
   filterableColumns: { key: string; label: string; values: string[] }[];
   chartTitles: string[];

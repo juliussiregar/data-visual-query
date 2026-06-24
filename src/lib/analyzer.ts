@@ -396,7 +396,7 @@ export function analyzeSheetData(
   rows: Record<string, string>[],
   sourceUrl: string,
   fetchedAt?: string,
-  options?: { mergeMode?: boolean; joinMode?: boolean }
+  options?: { mergeMode?: boolean; joinMode?: boolean; displayName?: string }
 ): SheetData {
   const enrichedRows = rows;
 
@@ -410,7 +410,14 @@ export function analyzeSheetData(
   const at = fetchedAt ?? new Date().toISOString();
   const quality = runDataQualityChecks(enrichedRows, columns);
   const dataset = {
-    ...buildDatasetMeta(enrichedRows, columns, sourceUrl, at, options?.mergeMode),
+    ...buildDatasetMeta(
+      enrichedRows,
+      columns,
+      sourceUrl,
+      at,
+      options?.mergeMode,
+      options?.displayName
+    ),
     quality,
     lineageSummary: buildLineageSummary(columns, {
       sourceUrl,

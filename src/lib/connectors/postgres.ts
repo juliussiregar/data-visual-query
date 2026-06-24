@@ -1,5 +1,4 @@
 import pg from "pg";
-import { validateReadOnlySql } from "../sql-engine";
 
 const { Pool } = pg;
 
@@ -11,14 +10,6 @@ export interface PostgresConnectionConfig {
   password: string;
   ssl: boolean;
   schema?: string;
-}
-
-export interface PostgresQueryResult {
-  columns: string[];
-  rows: Record<string, string>[];
-  rowCount: number;
-  truncated: boolean;
-  executionMs: number;
 }
 
 function toPoolConfig(config: PostgresConnectionConfig): pg.PoolConfig {
@@ -153,40 +144,6 @@ export async function loadPostgresTable(
   }
 }
 
-export async function executePostgresReadOnly(
-  config: PostgresConnectionConfig,
-  sql: string,
-  options: { maxRows?: number; timeoutMs?: number } = {}
-): Promise<PostgresQueryResult> {
-  const maxRows = options.maxRows ?? 100;
-  const timeoutMs = options.timeoutMs ?? 5000;
-  const validationError = validateReadOnlySql(sql);
-  if (validationError) throw new Error(validationError);
-
-  const pool = new Pool(toPoolConfig(config));
-  const start = Date.now();
-  const client = await pool.connect();
-  try {
-    await client.query(`SET statement_timeout = ${timeoutMs}`);
-    const normalized = sql.trim().replace(/;+\s*$/, "");
-    const hasLimit = /\bLIMIT\s+\d+/i.test(normalized);
-    const finalSql = hasLimit ? normalized : `${normalized} LIMIT ${maxRows + 1}`;
-    const res = await client.query(finalSql);
-    const truncated = !hasLimit && res.rows.length > maxRows;
-    const sliced = truncated ? res.rows.slice(0, maxRows) : res.rows;
-    const columns = res.fields.map((f) => f.name);
-    return {
-      columns,
-      rows: sliced.map((r) => rowToRecord(r as Record<string, unknown>)),
-      rowCount: sliced.length,
-      truncated,
-      executionMs: Date.now() - start,
-    };
-  } finally {
-    client.release();
-    await pool.end();
-  }
-}
 
 function sanitizeTableName(tableName: string, defaultSchema: string): string {
   const trimmed = tableName.trim();

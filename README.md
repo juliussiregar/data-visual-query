@@ -1,16 +1,58 @@
 # SheetVision
 
-Ubah Google Sheet menjadi dashboard interaktif — gratis (kecuali OpenAI untuk fitur chat).
+Workspace BI untuk mengubah **Google Sheet** atau **PostgreSQL** menjadi dashboard interaktif — dengan widget builder visual, filter tanpa SQL, dan chat AI opsional.
 
-## Fitur
+## Fitur utama
 
-- Paste link Google Sheet → dashboard otomatis
-- Multi-view: Overview, Grafik, Insights, Tabel, Kolom, AI Chat
-- KPI cards, pie/donut/bar/area/radial charts
-- Filter real-time & export CSV
-- AI Chat (OpenAI) untuk analisis data & saran visualisasi
+- **Project workspace** — setiap project punya sumber data (sheet atau DB) dan layout dashboard sendiri
+- **Overview & widget builder** — pilih bentuk (angka, batang, donat, ranking, dll.) lalu atur data lewat UI
+- **Multi-view** — Overview, Grafik, Data, Cari Data, Sumber
+- **Google Sheet publik** + **PostgreSQL** eksternal
+- **Filter, drill-down, visual query** — tanpa menulis kode
+- **AI Chat** (opsional) — analisis data & aksi dashboard
+- **Auth** — login, role viewer / analyst / admin
 
-## Setup Lokal
+## Prasyarat
+
+- Node.js 20+
+- PostgreSQL untuk database aplikasi (bisa via Docker Compose yang sudah ada di repo)
+- Google Sheet harus **"Anyone with the link can view"** jika memakai sheet publik
+
+## Setup lokal
+
+### 1. Environment
+
+Salin `.env.example` ke `.env` dan isi nilainya:
+
+```bash
+cp .env.example .env
+```
+
+| Variabel | Wajib | Keterangan |
+|----------|-------|------------|
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | Ya | Database aplikasi (Prisma) |
+| `APP_SECRET` | Ya | Min. 16 karakter — enkripsi password DB & session |
+| `OPENAI_API_KEY` | Opsional | Fitur AI Chat |
+| `OPENAI_MODEL` | Opsional | Default `gpt-4o-mini` |
+
+### 2. Database
+
+```bash
+# Jalankan Postgres (lihat docker-compose.yml di repo)
+docker compose up -d
+
+# Migrasi + seed akun
+npm run db:setup
+```
+
+Akun seed:
+
+| Username | Password | Role |
+|----------|----------|------|
+| `admin` | `admin123` | admin |
+| `superadmin` | `admin123` | admin |
+
+### 3. Jalankan aplikasi
 
 ```bash
 npm install
@@ -19,39 +61,30 @@ npm run dev
 
 Buka [http://localhost:3000](http://localhost:3000)
 
-> OpenAI API key sudah dikonfigurasi di server. Tidak perlu file `.env` untuk menjalankan aplikasi.
+## Alur penggunaan
 
-## Syarat Google Sheet
+1. Login → buat atau pilih **project** (dropdown kiri atas)
+2. Hubungkan **Google Sheet** atau **tabel PostgreSQL** di wizard / pengaturan project
+3. Klik **Cek koneksi & muat data**
+4. Atur **Overview** dengan widget builder (bentuk → data → simpan)
+5. Gunakan tab Grafik, Data, atau Cari Data untuk eksplorasi lebih lanjut
 
-Sheet harus di-share sebagai **"Anyone with the link can view"** agar data bisa diambil tanpa OAuth.
-
-## Deploy ke Vercel
-
-### 1. Push ke GitHub
+## Perintah berguna
 
 ```bash
-git add .
-git commit -m "feat: SheetVision dashboard siap deploy"
-git branch -M main
-git remote add origin https://github.com/USERNAME/google-sheet-tampilan.git
-git push -u origin main
+npm run dev          # Development
+npm run build        # Production build
+npm run db:setup     # Migrasi + seed
+npm run db:reset-workspace  # Reset data workspace (via API / menu user)
 ```
 
-### 2. Import & Deploy
+## Deploy
 
-1. Buka [vercel.com/new](https://vercel.com/new)
-2. Import repository GitHub Anda
-3. Framework: **Next.js** (otomatis terdeteksi)
-4. Klik **Deploy** — tidak perlu environment variables
+Deploy ke platform yang mendukung Next.js (mis. Vercel). **Wajib** set environment variables yang sama seperti `.env` — terutama `DB_*` dan `APP_SECRET`. Tanpa database aplikasi, login dan penyimpanan project tidak berfungsi.
 
-Aplikasi live di: **https://google-sheet-tampilan.vercel.app**
-
-> **Keamanan:** API key ada di source code. Gunakan **private repository** atau rotate key jika repo pernah public.
-
-## Tech Stack
+## Tech stack
 
 - Next.js 16 + React + TypeScript
-- Tailwind CSS
-- Recharts
-- Papa Parse
-- OpenAI API
+- Tailwind CSS · Recharts
+- Prisma + PostgreSQL
+- Papa Parse (CSV sheet) · OpenAI API (opsional)

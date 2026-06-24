@@ -1,4 +1,5 @@
 import type { DashboardLayout, SheetData, WidgetConfig, WidgetType } from "./types";
+import { getShapeDef } from "./widget-catalog";
 
 export function layoutKeyFromUrls(urls: string[]): string {
   const normalized = [...new Set(urls.map((u) => u.trim()).filter(Boolean))].sort();
@@ -14,63 +15,37 @@ export function hashLayoutKey(key: string): string {
   return `lk_${Math.abs(hash).toString(36)}`;
 }
 
-export function createDefaultLayout(sheetUrls: string[], data: SheetData): DashboardLayout {
-  const featuredChart =
-    data.charts.find((c) => c.featured)?.id ?? data.charts[0]?.id;
-
-  const widgets: WidgetConfig[] = [
-    { id: "widget-kpis", type: "kpis", visible: true, order: 0, span: 3 },
-    {
-      id: "widget-hero-chart",
-      type: "hero_chart",
-      visible: true,
-      order: 1,
-      span: 2,
-      chartId: featuredChart,
-    },
-    { id: "widget-distribution", type: "distribution", visible: true, order: 2, span: 1 },
-    { id: "widget-top-records", type: "top_records", visible: true, order: 3, span: 1 },
-    { id: "widget-insights", type: "insights", visible: true, order: 4, span: 1 },
-  ];
-
-  data.charts.slice(0, 4).forEach((chart, i) => {
-    widgets.push({
-      id: `widget-chart-${chart.id}`,
-      type: "chart",
-      visible: i < 2,
-      order: 10 + i,
-      span: 1,
-      chartId: chart.id,
-      chartType: chart.type,
-      categoryKey: chart.categoryKey,
-      valueKey: chart.valueKey,
-      aggregation: chart.aggregation,
-      title: chart.title,
-    });
-  });
-
-  const defaultVisible = new Set([
-    "widget-kpis",
-    "widget-hero-chart",
-    "widget-insights",
-    ...(data.distributions.length > 0 ? ["widget-distribution"] : []),
-    ...widgets
-      .filter((w) => w.type === "chart" && w.chartId?.startsWith("metric-"))
-      .slice(0, 1)
-      .map((w) => w.id),
-  ]);
-
+export function createDefaultLayout(sheetUrls: string[]): DashboardLayout {
   return {
     version: 1,
     sheetUrls,
     mergeMode: sheetUrls.length > 1,
-    widgets: widgets
-      .sort((a, b) => a.order - b.order)
-      .map((w) => ({
-        ...w,
-        visible: defaultVisible.has(w.id),
-      })),
+    widgets: [],
     updatedAt: new Date().toISOString(),
+  };
+}
+
+/** Hapus paket widget otomatis lama (stat + bar + ranking) dari layout tersimpan. */
+export function stripLegacyStarterPack(layout: DashboardLayout): DashboardLayout {
+  const custom = layout.widgets.filter((w) => w.visualShape);
+  if (custom.length !== 3) return retainOnlyCustomWidgets(layout);
+  const shapes = new Set(custom.map((w) => w.visualShape));
+  if (
+    shapes.size === 3 &&
+    shapes.has("stat") &&
+    shapes.has("bar") &&
+    shapes.has("ranking")
+  ) {
+    return { ...layout, widgets: [], updatedAt: new Date().toISOString() };
+  }
+  return retainOnlyCustomWidgets(layout);
+}
+
+/** Hanya simpan widget buatan user (punya visualShape). */
+export function retainOnlyCustomWidgets(layout: DashboardLayout): DashboardLayout {
+  return {
+    ...layout,
+    widgets: layout.widgets.filter((w) => w.visualShape),
   };
 }
 
@@ -78,47 +53,33 @@ export function mergeLayoutWithData(
   layout: DashboardLayout,
   data: SheetData
 ): DashboardLayout {
-  const existingChartIds = new Set(
-    layout.widgets.filter((w) => w.type === "chart").map((w) => w.chartId)
-  );
-  const next = [...layout.widgets];
-  let maxOrder = Math.max(0, ...next.map((w) => w.order));
-
-  for (const chart of data.charts) {
-    if (existingChartIds.has(chart.id)) continue;
-    maxOrder += 1;
-    next.push({
-      id: `widget-chart-${chart.id}`,
-      type: "chart",
-      visible: false,
-      order: maxOrder,
-      span: 1,
-      chartId: chart.id,
-      chartType: chart.type,
-      categoryKey: chart.categoryKey,
-      valueKey: chart.valueKey,
-      aggregation: chart.aggregation,
-      title: chart.title,
-    });
-  }
-
   return {
     ...layout,
-    sheetUrls: layout.sheetUrls.length ? layout.sheetUrls : [data.sourceUrl.split(" | ")[0] ?? data.sourceUrl],
-    widgets: next.sort((a, b) => a.order - b.order),
+    sheetUrls: layout.sheetUrls.length
+      ? layout.sheetUrls
+      : [data.sourceUrl.split(" | ")[0] ?? data.sourceUrl],
+    widgets: retainOnlyCustomWidgets(layout).widgets,
   };
 }
 
 export function getVisibleWidgets(layout: DashboardLayout): WidgetConfig[] {
-  return layout.widgets.filter((w) => w.visible).sort((a, b) => a.order - b.order);
+  return layout.widgets
+    .filter((w) => w.visible && w.visualShape)
+    .sort((a, b) => a.order - b.order);
 }
 
 export function getHiddenWidgets(layout: DashboardLayout): WidgetConfig[] {
-  return layout.widgets.filter((w) => !w.visible).sort((a, b) => a.order - b.order);
+  return layout.widgets
+    .filter((w) => !w.visible || !w.visualShape)
+    .sort((a, b) => a.order - b.order);
 }
 
 export function widgetLabel(widget: WidgetConfig, data?: SheetData): string {
   if (widget.title) return widget.title;
+  if (widget.visualShape) {
+    const shape = getShapeDef(widget.visualShape);
+    if (shape) return shape.label;
+  }
   switch (widget.type) {
     case "kpis":
       return "KPI Cards";

@@ -34,27 +34,24 @@ export function useAuth() {
     void refresh();
   }, [refresh]);
 
-  const login = useCallback(
-    async (email: string, password: string) => {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Login gagal");
-      setState({ user: json.user, loading: false, configured: true });
-      return json.user as AuthUser;
-    },
-    []
-  );
+  const login = useCallback(async (username: string, password: string) => {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "Login gagal");
+    setState({ user: json.user, loading: false, configured: true });
+    return json.user as AuthUser;
+  }, []);
 
   const register = useCallback(
-    async (email: string, password: string, name: string) => {
+    async (username: string, password: string, name: string) => {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name }),
+        body: JSON.stringify({ username, password, name }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Registrasi gagal");

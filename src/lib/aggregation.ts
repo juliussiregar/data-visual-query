@@ -40,13 +40,13 @@ export function aggregateData(
   rows: Record<string, string>[],
   categoryKey: string,
   valueKey: string | undefined,
-  aggregation: "count" | "sum" | "avg"
+  aggregation: "count" | "sum" | "avg" | "min" | "max"
 ): ChartDataPoint[] {
-  const map = new Map<string, { sum: number; count: number }>();
+  const map = new Map<string, { sum: number; count: number; min: number; max: number }>();
 
   for (const row of rows) {
     const category = row[categoryKey]?.trim() || "Tidak ada";
-    const existing = map.get(category) ?? { sum: 0, count: 0 };
+    const existing = map.get(category) ?? { sum: 0, count: 0, min: Infinity, max: -Infinity };
 
     if (aggregation === "count") {
       existing.count += 1;
@@ -55,6 +55,8 @@ export function aggregateData(
       if (num !== null) {
         existing.sum += num;
         existing.count += 1;
+        existing.min = Math.min(existing.min, num);
+        existing.max = Math.max(existing.max, num);
       }
     }
     map.set(category, existing);
@@ -62,10 +64,12 @@ export function aggregateData(
 
   const points: ChartDataPoint[] = [];
   let i = 0;
-  for (const [name, { sum, count }] of map.entries()) {
+  for (const [name, { sum, count, min, max }] of map.entries()) {
     let value = count;
     if (aggregation === "sum") value = sum;
     if (aggregation === "avg") value = count > 0 ? sum / count : 0;
+    if (aggregation === "min") value = count > 0 ? min : 0;
+    if (aggregation === "max") value = count > 0 ? max : 0;
     points.push({
       name,
       value,

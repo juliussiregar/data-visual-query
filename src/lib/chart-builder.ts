@@ -1,5 +1,6 @@
 import { aggregateData } from "./aggregation";
 import type { ChartConfig, ChartType, SheetData, WidgetConfig } from "./types";
+import { buildChartFromWidget } from "./widget-data";
 
 export function findChartById(data: SheetData, chartId: string): ChartConfig | undefined {
   return data.charts.find((c) => c.id === chartId);
@@ -9,6 +10,11 @@ export function resolveChartForWidget(
   data: SheetData,
   widget: WidgetConfig
 ): ChartConfig | null {
+  if (widget.dataQuery || widget.visualShape) {
+    const custom = buildChartFromWidget(data, widget);
+    if (custom) return custom;
+  }
+
   if (widget.type === "hero_chart") {
     const base =
       (widget.chartId ? findChartById(data, widget.chartId) : undefined) ??

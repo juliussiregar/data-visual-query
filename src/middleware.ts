@@ -5,7 +5,6 @@ import { SESSION_COOKIE } from "@/lib/session";
 const PROTECTED_PREFIXES = [
   "/api/sheet",
   "/api/datasource",
-  "/api/query",
   "/api/audit",
   "/api/chat",
   "/api/user",

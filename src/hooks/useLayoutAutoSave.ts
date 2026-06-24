@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { DashboardLayout } from "@/lib/types";
 import { saveRemoteLayout } from "@/lib/layout-storage";
+import { saveProjectLayout } from "@/lib/project-storage";
 
 export type LayoutSyncStatus = "synced" | "dirty" | "saving" | "error";
 
 export function useLayoutAutoSave(
   layout: DashboardLayout | null,
   enabled: boolean,
-  onStatusChange: (status: LayoutSyncStatus) => void
+  onStatusChange: (status: LayoutSyncStatus) => void,
+  projectId?: string | null
 ) {
   const lastSavedRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -20,14 +22,20 @@ export function useLayoutAutoSave(
     const current = layoutRef.current;
     if (!current) return;
     onStatusChange("saving");
-    const ok = await saveRemoteLayout(current);
+    const ok = projectId
+      ? await saveProjectLayout(projectId, current)
+      : await saveRemoteLayout(current);
     if (ok) {
       lastSavedRef.current = JSON.stringify(current);
       onStatusChange("synced");
     } else {
       onStatusChange("error");
     }
-  }, [onStatusChange]);
+  }, [onStatusChange, projectId]);
+
+  useEffect(() => {
+    lastSavedRef.current = null;
+  }, [projectId]);
 
   useEffect(() => {
     if (!layout || !enabled) return;

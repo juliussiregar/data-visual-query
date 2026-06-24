@@ -140,12 +140,14 @@ export function describeAction(
     case "set_view": {
       const labels: Record<ViewId, string> = {
         overview: "Overview",
-        charts: "Grafik",
+        charts: "Charts",
         insights: "Insights",
-        data: "Tabel Data",
-        columns: "Profil Kolom",
-        sources: "Sumber Data",
-        sql: "SQL",
+        data: "Data",
+        columns: "Columns",
+        projects: "Projects",
+        sources: "Sources",
+        query: "Explore",
+        audit: "Audit Log",
       };
       return `Buka ${labels[action.view]}`;
     }

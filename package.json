@@ -7,11 +7,26 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:generate": "prisma generate",
+    "db:migrate": "node scripts/with-db-url.mjs migrate deploy",
+    "db:migrate:dev": "node scripts/with-db-url.mjs migrate dev",
+    "db:seed": "node scripts/with-db-url.mjs db seed",
+    "db:push": "node scripts/with-db-url.mjs db push",
+    "db:studio": "node scripts/with-db-url.mjs studio",
+    "db:setup": "node scripts/db-reconcile.mjs && npm run db:migrate && npm run db:seed && node scripts/setup-reader-role.mjs",
+    "db:reconcile": "node scripts/db-reconcile.mjs",
+    "db:reader-role": "node scripts/setup-reader-role.mjs",
+    "db:reset": "node scripts/with-db-url.mjs migrate reset",
+    "db:reset-workspace": "node scripts/reset-workspace.mjs"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.3",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "lucide-react": "^0.511.0",
@@ -34,7 +49,9 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
+    "prisma": "^6.19.3",
     "tailwindcss": "^4",
+    "tsx": "^4.22.4",
     "typescript": "^5"
   }
 }

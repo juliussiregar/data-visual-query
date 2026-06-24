@@ -1,6 +1,21 @@
-# Jalankan: docker compose up -d
-# Variabel database dibaca dari .env di root project.
-# Nanti tambahkan service `app` di sini saat image siap.
+# SheetVision — deploy di server
+#
+# Persiapan:
+#   cp .env.example .env
+#   # isi APP_SECRET, DB_PASSWORD, OPENAI_API_KEY (opsional)
+#
+# Build & jalankan:
+#   docker compose up -d --build
+#
+# Deploy pertama (buat akun admin):
+#   docker compose up -d --build
+#   docker compose run --rm -e RUN_DB_SEED=true app true
+#   # atau set RUN_DB_SEED=true di .env lalu restart app sekali
+#
+# Akun seed: admin / admin123, superadmin / admin123
+#
+# Hanya database (dev lokal tanpa container app):
+#   docker compose up -d db
 
 services:
   db:
@@ -8,34 +23,53 @@ services:
     container_name: sheetvision-db
     restart: unless-stopped
     ports:
-      - "0.0.0.0:${DB_PORT:-54327}:5432"
+      - "127.0.0.1:${DB_PORT:-54327}:5432"
     environment:
       POSTGRES_DB: ${DB_NAME:-sheetvision}
       POSTGRES_USER: ${DB_USER:-sheetvision}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
-      POSTGRES_READER_PASSWORD: ${DB_READER_PASSWORD:-sheetvision_reader}
     volumes:
       - db_data:/var/lib/postgresql/data
-      - ./docker/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-sheetvision} -d ${DB_NAME:-sheetvision}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${DB_USER:-sheetvision} -d ${DB_NAME:-sheetvision}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 20s
+    networks:
+      - sheetvision
 
-  # app:
-  #   build: .
-  #   restart: unless-stopped
-  #   ports:
-  #     - "3000:3000"
-  #   env_file: .env
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy
-  #   environment:
-  #     DB_HOST: db
-  #     DB_PORT: 5432
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sheetvision-app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3066}:3000"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DB_HOST: db
+      DB_PORT: "5432"
+      WAIT_FOR_DB: "true"
+      RUN_DB_MIGRATE: ${RUN_DB_MIGRATE:-true}
+      RUN_DB_SEED: ${RUN_DB_SEED:-false}
+      RUN_DB_READER_ROLE: ${RUN_DB_READER_ROLE:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - sheetvision
 
 volumes:
   db_data:
+
+networks:
+  sheetvision:
+    driver: bridge

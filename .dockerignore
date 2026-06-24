@@ -1,0 +1,28 @@
+# dependencies & build output
+node_modules
+.next
+out
+build
+
+# git & IDE
+.git
+.gitignore
+.cursor
+.vscode
+*.md
+!README.md
+
+# env (injected at runtime)
+.env
+.env.*
+!.env.example
+
+# logs & OS
+npm-debug.log*
+.DS_Store
+*.pem
+
+# test & misc
+coverage
+.vercel
+*.tsbuildinfo

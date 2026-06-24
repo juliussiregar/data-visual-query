@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUserFromCookies } from "@/lib/session-server";
-import { isAppDatabaseConfigured } from "@/lib/db/app-pool";
+import { isAppDatabaseConfigured } from "@/lib/db/prisma";
 
 export const dynamic = "force-dynamic";
 
