@@ -3,6 +3,7 @@ import { AuthError, requireSessionUser } from "@/lib/session-server";
 import {
   deleteUserProject,
   getUserProject,
+  sanitizeProjectDbRefs,
   updateUserProject,
   type ProjectUpsertInput,
 } from "@/lib/db/projects";
@@ -64,6 +65,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       input.layout = body.layout as DashboardLayout;
     }
     if (body.touchOpened) input.touchOpened = true;
+
+    const dbRefs = await sanitizeProjectDbRefs(user.id, {
+      dbConnectionIds: input.dbConnectionIds,
+      activeDbConnectionId: input.activeDbConnectionId,
+    });
+    Object.assign(input, dbRefs);
 
     const project = await updateUserProject(user.id, id, input);
     if (!project) {

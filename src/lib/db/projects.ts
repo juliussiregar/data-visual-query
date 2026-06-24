@@ -4,6 +4,41 @@ import type { Project } from "@/lib/project-types";
 import type { Prisma } from "@prisma/client";
 import { Prisma as PrismaRuntime } from "@prisma/client";
 
+export async function filterOwnedDbConnectionIds(
+  userId: string,
+  ids: string[]
+): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const rows = await getPrisma().userDbConnection.findMany({
+    where: { userId, id: { in: ids } },
+    select: { id: true },
+  });
+  const owned = new Set(rows.map((row) => row.id));
+  return ids.filter((id) => owned.has(id));
+}
+
+export async function sanitizeProjectDbRefs(
+  userId: string,
+  input: Pick<ProjectUpsertInput, "dbConnectionIds" | "activeDbConnectionId">
+): Promise<Pick<ProjectUpsertInput, "dbConnectionIds" | "activeDbConnectionId">> {
+  const result: Pick<ProjectUpsertInput, "dbConnectionIds" | "activeDbConnectionId"> = {};
+
+  if (input.dbConnectionIds !== undefined) {
+    result.dbConnectionIds = await filterOwnedDbConnectionIds(userId, input.dbConnectionIds);
+  }
+
+  if (input.activeDbConnectionId !== undefined) {
+    if (input.activeDbConnectionId === null) {
+      result.activeDbConnectionId = null;
+    } else {
+      const owned = await filterOwnedDbConnectionIds(userId, [input.activeDbConnectionId]);
+      result.activeDbConnectionId = owned[0] ?? null;
+    }
+  }
+
+  return result;
+}
+
 function parseStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((v): v is string => typeof v === "string" && v.trim() !== "");

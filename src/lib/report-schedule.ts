@@ -1,15 +1,19 @@
+import { userScopedKey } from "./user-local-storage";
+
 export type ReportScheduleInterval = 0 | 60 | 1440;
 
-const STORAGE_KEY = "sheetvision:reportScheduleMinutes";
+function storageKey(userId: string) {
+  return userScopedKey(userId, "reportScheduleMinutes");
+}
 
 function isBrowser() {
   return typeof window !== "undefined";
 }
 
-export function loadReportScheduleMinutes(): ReportScheduleInterval {
-  if (!isBrowser()) return 0;
+export function loadReportScheduleMinutes(userId: string): ReportScheduleInterval {
+  if (!isBrowser() || !userId) return 0;
   try {
-    const n = parseInt(localStorage.getItem(STORAGE_KEY) ?? "0", 10);
+    const n = parseInt(localStorage.getItem(storageKey(userId)) ?? "0", 10);
     if (n === 60 || n === 1440) return n;
   } catch {
     /* ignore */
@@ -17,9 +21,9 @@ export function loadReportScheduleMinutes(): ReportScheduleInterval {
   return 0;
 }
 
-export function saveReportScheduleMinutes(minutes: ReportScheduleInterval) {
-  if (!isBrowser()) return;
-  localStorage.setItem(STORAGE_KEY, String(minutes));
+export function saveReportScheduleMinutes(userId: string, minutes: ReportScheduleInterval) {
+  if (!isBrowser() || !userId) return;
+  localStorage.setItem(storageKey(userId), String(minutes));
 }
 
 export function buildCsvFromRows(

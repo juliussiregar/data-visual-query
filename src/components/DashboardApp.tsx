@@ -80,13 +80,17 @@ import {
 import { fetchDbConnections, connectionToApiPayload } from "@/lib/datasource-storage";
 import type { Project } from "@/lib/project-types";
 import {
-  fetchProject,
   fetchProjects,
   getProjectFromUrl,
   syncProjectToUrl,
   updateProject,
 } from "@/lib/project-storage";
 import { clearWorkspaceLocalStorage } from "@/lib/workspace-storage";
+import {
+  clearLegacyLocalStorage,
+  clearUserLocalStorage,
+  setActiveUserId,
+} from "@/lib/user-local-storage";
 import {
   probeDatabaseTable,
   probeSheetUrl,
@@ -112,6 +116,7 @@ interface FunnelMetrics {
 export function DashboardApp() {
   const searchParams = useSearchParams();
   const initRef = useRef(false);
+  const prevUserIdRef = useRef<string | null>(null);
   const auth = useAuth();
 
   const [sheetData, setSheetData] = useState<SheetData | null>(null);
@@ -145,13 +150,54 @@ export function DashboardApp() {
   activeProjectRef.current = activeProject;
 
   const userRole = auth.user?.role ?? "analyst";
+  const userId = auth.user?.id ?? "";
   const perms = rolePermissions(userRole);
   const { toast } = useToast();
 
-  useEffect(() => {
-    setAutoRefreshMinutes(loadAutoRefreshMinutes());
-    setReportScheduleMinutes(loadReportScheduleMinutes());
+  const resetDashboardState = useCallback(() => {
+    setSheetData(null);
+    setLoading(false);
+    setError(null);
+    setActiveView("overview");
+    setFilters({});
+    setLastUrl("");
+    setSheetUrls([]);
+    setLayout(null);
+    setSyncStatus("synced");
+    setLinkCopied(false);
+    setHeroCollapsed(true);
+    setOverviewBuilderOpen(false);
+    setDrillFilter(null);
+    setDataScope(null);
+    setSavedMetrics([]);
+    setFunnelMetrics(null);
+    setVisualQuery(EMPTY_VISUAL_QUERY);
+    setActiveProject(null);
+    setProjects([]);
+    setLoadingMessage(null);
+    syncProjectToUrl(null);
   }, []);
+
+  useEffect(() => {
+    const nextUserId = auth.user?.id ?? null;
+    if (nextUserId === prevUserIdRef.current) return;
+
+    const previousUserId = prevUserIdRef.current;
+    prevUserIdRef.current = nextUserId;
+
+    if (previousUserId) {
+      clearUserLocalStorage(previousUserId);
+      clearLegacyLocalStorage();
+      resetDashboardState();
+      initRef.current = false;
+    }
+
+    if (nextUserId) {
+      setActiveUserId(nextUserId);
+      setAutoRefreshMinutes(loadAutoRefreshMinutes(nextUserId));
+      setReportScheduleMinutes(loadReportScheduleMinutes(nextUserId));
+    }
+  }, [auth.user?.id, resetDashboardState]);
 
   useEffect(() => {
     if (activeView !== "overview") {
@@ -214,7 +260,7 @@ export function DashboardApp() {
 
         setError(null);
         setSheetData(json);
-        setSavedMetrics(loadSavedMetrics(unique));
+        if (userId) setSavedMetrics(loadSavedMetrics(userId, unique));
         setFunnelMetrics(json.funnelMetrics ?? null);
 
         setDataScope(null);
@@ -233,7 +279,7 @@ export function DashboardApp() {
         setLoading(false);
       }
     },
-    [initLayout, userRole]
+    [initLayout, userRole, userId]
   );
 
   const loadSheet = useCallback(
@@ -247,6 +293,7 @@ export function DashboardApp() {
     if (activeProjectRef.current) {
       const fresh = list.find((p) => p.id === activeProjectRef.current?.id);
       if (fresh) setActiveProject(fresh);
+      else setActiveProject(null);
     }
     return list;
   }, []);
@@ -308,28 +355,11 @@ export function DashboardApp() {
       return;
     }
 
-    clearWorkspaceLocalStorage();
-    setSheetData(null);
-    setLoading(false);
-    setError(null);
-    setActiveView("overview");
-    setFilters({});
-    setLastUrl("");
-    setSheetUrls([]);
-    setLayout(null);
-    setLinkCopied(false);
-    setHeroCollapsed(true);
-    setOverviewBuilderOpen(false);
-    setDrillFilter(null);
-    setDataScope(null);
-    setSavedMetrics([]);
-    setFunnelMetrics(null);
-    setVisualQuery(EMPTY_VISUAL_QUERY);
-    setActiveProject(null);
-    setProjects([]);
+    clearWorkspaceLocalStorage(auth.user?.id);
+    resetDashboardState();
     initRef.current = false;
     window.location.reload();
-  }, []);
+  }, [auth.user?.id, resetDashboardState]);
 
   const handleSwitchSheet = useCallback(
     (url: string) => loadSheets([url], false),
@@ -520,12 +550,12 @@ export function DashboardApp() {
 
   const handleAutoRefreshChange = (minutes: AutoRefreshInterval) => {
     setAutoRefreshMinutes(minutes);
-    saveAutoRefreshMinutes(minutes);
+    if (userId) saveAutoRefreshMinutes(userId, minutes);
   };
 
   const handleReportScheduleChange = (minutes: ReportScheduleInterval) => {
     setReportScheduleMinutes(minutes);
-    saveReportScheduleMinutes(minutes);
+    if (userId) saveReportScheduleMinutes(userId, minutes);
   };
 
   const { flushSave } = useLayoutAutoSave(
@@ -555,13 +585,14 @@ export function DashboardApp() {
 
       const projectId = searchParams.get("project") || getProjectFromUrl();
       if (projectId) {
-        const project = list.find((p) => p.id === projectId) ?? (await fetchProject(projectId));
+        const project = list.find((p) => p.id === projectId);
         if (project) {
           openProject(project);
           setActiveView("overview");
           setHeroCollapsed(true);
           return;
         }
+        syncProjectToUrl(null);
       }
 
       setActiveView("overview");
@@ -652,32 +683,35 @@ export function DashboardApp() {
 
   const handleSaveMetric = useCallback(
     (metric: SavedMetric) => {
+      if (!userId) return;
       const urls = sheetUrls.length ? sheetUrls : lastUrl ? [lastUrl] : [];
-      setSavedMetrics(upsertSavedMetric(urls, metric));
+      setSavedMetrics(upsertSavedMetric(userId, urls, metric));
       logAuditClient("metric_save", metric.name, { formula: metric.formula }, userRole);
     },
-    [sheetUrls, lastUrl, userRole]
+    [sheetUrls, lastUrl, userRole, userId]
   );
 
   const handleCertifyMetric = useCallback(
     (id: string) => {
+      if (!userId) return;
       const urls = sheetUrls.length ? sheetUrls : lastUrl ? [lastUrl] : [];
       const updated = savedMetrics.map((m) =>
         m.id === id ? { ...m, status: "certified" as const } : m
       );
       const target = updated.find((m) => m.id === id);
-      if (target) upsertSavedMetric(urls, target);
+      if (target) upsertSavedMetric(userId, urls, target);
       setSavedMetrics(updated);
     },
-    [savedMetrics, sheetUrls, lastUrl]
+    [savedMetrics, sheetUrls, lastUrl, userId]
   );
 
   const handleRemoveMetric = useCallback(
     (id: string) => {
+      if (!userId) return;
       const urls = sheetUrls.length ? sheetUrls : lastUrl ? [lastUrl] : [];
-      setSavedMetrics(removeSavedMetric(urls, id));
+      setSavedMetrics(removeSavedMetric(userId, urls, id));
     },
-    [sheetUrls, lastUrl]
+    [sheetUrls, lastUrl, userId]
   );
 
   const applyChatActions = useCallback(
@@ -940,6 +974,16 @@ export function DashboardApp() {
     Object.values(filters).some((v) => v.trim());
   const showAppShell = Boolean(auth.user);
 
+  const handleLogout = useCallback(async () => {
+    const currentUserId = auth.user?.id;
+    if (currentUserId) clearUserLocalStorage(currentUserId);
+    clearLegacyLocalStorage();
+    await auth.logout();
+    resetDashboardState();
+    initRef.current = false;
+    syncProjectToUrl(null);
+  }, [auth, resetDashboardState]);
+
   if (auth.loading) {
     return (
       <div className="app-loading">
@@ -992,7 +1036,7 @@ export function DashboardApp() {
             <div className="flex shrink-0 items-center gap-1.5">
               <UserMenu
                 user={auth.user}
-                onLogout={() => void auth.logout()}
+                onLogout={() => void handleLogout()}
                 onOpenSettings={() => setShowSettingsDialog(true)}
                 onResetWorkspace={() => void handleResetWorkspace()}
               />
@@ -1175,6 +1219,7 @@ export function DashboardApp() {
 
           {viewData && layout && !overviewBuilderOpen && (
             <FloatingChatWidget
+              userId={userId}
               data={viewData}
               activeView={activeView}
               filters={filters}

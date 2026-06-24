@@ -7,7 +7,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 FROM base AS deps
 RUN apk add --no-cache libc6-compat
 COPY package.json package-lock.json ./
-RUN corepack enable && npm ci
+# Prefer reproducible ci; fall back to install if lock file on host is stale (mis. belum git pull)
+RUN corepack enable \
+  && (npm ci || (echo "WARN: package-lock.json tidak sinkron — menjalankan npm install..." >&2 && npm install))
 
 FROM base AS builder
 RUN apk add --no-cache libc6-compat

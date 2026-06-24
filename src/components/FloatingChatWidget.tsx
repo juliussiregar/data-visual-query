@@ -9,6 +9,7 @@ import { ChatPanel } from "./ChatPanel";
 import { cn } from "@/lib/utils";
 
 interface FloatingChatWidgetProps {
+  userId: string;
   data: SheetData;
   activeView: ViewId;
   filters: Record<string, string>;
@@ -23,6 +24,7 @@ interface FloatingChatWidgetProps {
 }
 
 export function FloatingChatWidget({
+  userId,
   data,
   activeView,
   filters,
@@ -62,6 +64,7 @@ export function FloatingChatWidget({
       >
         {open && (
           <ChatPanel
+            userId={userId}
             data={data}
             activeView={activeView}
             filters={filters}

@@ -82,6 +82,7 @@ function TypingIndicator() {
 }
 
 interface ChatPanelProps {
+  userId: string;
   data: SheetData;
   activeView: ViewId;
   filters: Record<string, string>;
@@ -98,6 +99,7 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({
+  userId,
   data,
   activeView,
   filters,
@@ -114,7 +116,7 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const sheetKey = sheetUrls.length ? sheetUrls.join("||") : data.sourceUrl;
   const [messages, setMessages] = useState<ChatMessage[]>(() =>
-    loadChatHistory(sheetUrls.length ? sheetUrls : [data.sourceUrl])
+    loadChatHistory(userId, sheetUrls.length ? sheetUrls : [data.sourceUrl])
   );
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -178,15 +180,15 @@ export function ChatPanel({
 
   useEffect(() => {
     const urls = sheetUrls.length ? sheetUrls : [data.sourceUrl];
-    setMessages(loadChatHistory(urls));
-  }, [sheetKey, data.sourceUrl, sheetUrls]);
+    setMessages(loadChatHistory(userId, urls));
+  }, [sheetKey, data.sourceUrl, sheetUrls, userId]);
 
   useEffect(() => {
     const urls = sheetUrls.length ? sheetUrls : [data.sourceUrl];
     if (messages.length > 0 && !loading) {
-      saveChatHistory(urls, messages);
+      saveChatHistory(userId, urls, messages);
     }
-  }, [messages, loading, sheetUrls, data.sourceUrl]);
+  }, [messages, loading, sheetUrls, data.sourceUrl, userId]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -295,7 +297,7 @@ export function ChatPanel({
 
   const handleClearHistory = () => {
     const urls = sheetUrls.length ? sheetUrls : [data.sourceUrl];
-    clearChatHistory(urls);
+    clearChatHistory(userId, urls);
     setMessages([]);
     setError(null);
   };

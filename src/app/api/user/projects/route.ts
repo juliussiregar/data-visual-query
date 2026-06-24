@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AuthError, requireSessionUser } from "@/lib/session-server";
-import { createUserProject, listUserProjects } from "@/lib/db/projects";
+import { createUserProject, listUserProjects, sanitizeProjectDbRefs } from "@/lib/db/projects";
 
 export const dynamic = "force-dynamic";
 
@@ -33,12 +33,18 @@ export async function POST(request: NextRequest) {
     if (!name || typeof name !== "string") {
       return NextResponse.json({ error: "Nama project wajib" }, { status: 400 });
     }
+    const dbRefs = await sanitizeProjectDbRefs(user.id, {
+      dbConnectionIds: Array.isArray(dbConnectionIds)
+        ? dbConnectionIds.filter((u: unknown): u is string => typeof u === "string")
+        : undefined,
+      activeDbConnectionId:
+        typeof activeDbConnectionId === "string" ? activeDbConnectionId : undefined,
+    });
+
     const project = await createUserProject(user.id, name, description, {
       sheetUrls: Array.isArray(sheetUrls) ? sheetUrls : undefined,
       mergeMode: typeof mergeMode === "boolean" ? mergeMode : undefined,
-      dbConnectionIds: Array.isArray(dbConnectionIds) ? dbConnectionIds : undefined,
-      activeDbConnectionId:
-        typeof activeDbConnectionId === "string" ? activeDbConnectionId : undefined,
+      ...dbRefs,
       activeDbTable: typeof activeDbTable === "string" ? activeDbTable : undefined,
     });
     return NextResponse.json({ project });

@@ -1,29 +1,14 @@
 /** Hapus cache lokal browser (chat, filter, sheet lama, dll.) */
 
-const PREFIXES = [
-  "sheetvision:",
-  "sheetvision_",
-];
+import { clearLegacyLocalStorage, clearUserLocalStorage } from "./user-local-storage";
 
-const EXACT_KEYS = [
-  "sheetvision:saved",
-  "sheetvision:lastUrl",
-];
+export { clearLegacyLocalStorage, clearUserLocalStorage };
 
-export function clearWorkspaceLocalStorage() {
+export function clearWorkspaceLocalStorage(userId?: string) {
   if (typeof window === "undefined") return;
 
-  const keysToRemove: string[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key) continue;
-    if (EXACT_KEYS.includes(key) || PREFIXES.some((p) => key.startsWith(p))) {
-      keysToRemove.push(key);
-    }
-  }
-  for (const key of keysToRemove) {
-    localStorage.removeItem(key);
-  }
+  if (userId) clearUserLocalStorage(userId);
+  clearLegacyLocalStorage();
 
   const params = new URLSearchParams(window.location.search);
   params.delete("sheet");

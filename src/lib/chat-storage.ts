@@ -1,7 +1,8 @@
 import type { ChatMessage } from "./types";
+import { userScopedKey } from "./user-local-storage";
 
-const CHAT_KEY = "sheetvision:chat";
 export const CHAT_HISTORY_LIMIT = 5;
+const CHAT_STORE_SUFFIX = "chat";
 
 function isBrowser() {
   return typeof window !== "undefined";
@@ -10,6 +11,10 @@ function isBrowser() {
 export function chatStorageKey(sheetUrls: string[]): string {
   const normalized = [...new Set(sheetUrls.map((u) => u.trim()).filter(Boolean))].sort();
   return normalized.join("||") || "default";
+}
+
+function chatStoreKey(userId: string) {
+  return userScopedKey(userId, CHAT_STORE_SUFFIX);
 }
 
 function isValidMessage(value: unknown): value is ChatMessage {
@@ -38,10 +43,10 @@ function trimMessages(messages: ChatMessage[]): ChatMessage[] {
     }));
 }
 
-export function loadChatHistory(sheetUrls: string[]): ChatMessage[] {
-  if (!isBrowser()) return [];
+export function loadChatHistory(userId: string, sheetUrls: string[]): ChatMessage[] {
+  if (!isBrowser() || !userId) return [];
   try {
-    const raw = localStorage.getItem(CHAT_KEY);
+    const raw = localStorage.getItem(chatStoreKey(userId));
     if (!raw) return [];
     const all = JSON.parse(raw) as Record<string, unknown>;
     const key = chatStorageKey(sheetUrls);
@@ -53,10 +58,11 @@ export function loadChatHistory(sheetUrls: string[]): ChatMessage[] {
   }
 }
 
-export function saveChatHistory(sheetUrls: string[], messages: ChatMessage[]) {
-  if (!isBrowser()) return;
+export function saveChatHistory(userId: string, sheetUrls: string[], messages: ChatMessage[]) {
+  if (!isBrowser() || !userId) return;
   try {
-    const raw = localStorage.getItem(CHAT_KEY);
+    const storeKey = chatStoreKey(userId);
+    const raw = localStorage.getItem(storeKey);
     const all: Record<string, ChatMessage[]> = raw ? JSON.parse(raw) : {};
     const key = chatStorageKey(sheetUrls);
     const trimmed = trimMessages(messages);
@@ -65,20 +71,21 @@ export function saveChatHistory(sheetUrls: string[], messages: ChatMessage[]) {
     } else {
       all[key] = trimmed;
     }
-    localStorage.setItem(CHAT_KEY, JSON.stringify(all));
+    localStorage.setItem(storeKey, JSON.stringify(all));
   } catch {
     /* ignore quota errors */
   }
 }
 
-export function clearChatHistory(sheetUrls: string[]) {
-  if (!isBrowser()) return;
+export function clearChatHistory(userId: string, sheetUrls: string[]) {
+  if (!isBrowser() || !userId) return;
   try {
-    const raw = localStorage.getItem(CHAT_KEY);
+    const storeKey = chatStoreKey(userId);
+    const raw = localStorage.getItem(storeKey);
     if (!raw) return;
     const all = JSON.parse(raw) as Record<string, ChatMessage[]>;
     delete all[chatStorageKey(sheetUrls)];
-    localStorage.setItem(CHAT_KEY, JSON.stringify(all));
+    localStorage.setItem(storeKey, JSON.stringify(all));
   } catch {
     /* ignore */
   }

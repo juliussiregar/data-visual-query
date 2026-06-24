@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { userScopedKey } from "@/lib/user-local-storage";
 
 export type AutoRefreshInterval = 0 | 5 | 15 | 30;
 
-const STORAGE_KEY = "sheetvision:autoRefreshMinutes";
+function storageKey(userId: string) {
+  return userScopedKey(userId, "autoRefreshMinutes");
+}
 
-export function loadAutoRefreshMinutes(): AutoRefreshInterval {
-  if (typeof window === "undefined") return 0;
+export function loadAutoRefreshMinutes(userId: string): AutoRefreshInterval {
+  if (typeof window === "undefined" || !userId) return 0;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey(userId));
     const n = parseInt(raw ?? "0", 10);
     if (n === 5 || n === 15 || n === 30) return n;
   } catch {
@@ -18,9 +21,9 @@ export function loadAutoRefreshMinutes(): AutoRefreshInterval {
   return 0;
 }
 
-export function saveAutoRefreshMinutes(minutes: AutoRefreshInterval) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, String(minutes));
+export function saveAutoRefreshMinutes(userId: string, minutes: AutoRefreshInterval) {
+  if (typeof window === "undefined" || !userId) return;
+  localStorage.setItem(storageKey(userId), String(minutes));
 }
 
 export function useAutoRefresh(
