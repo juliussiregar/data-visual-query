@@ -159,15 +159,17 @@ export function DashboardApp() {
 
   const resolveLayoutForReload = useCallback(
     (project?: Project | null): DashboardLayout | null | undefined => {
-      const projectId = project?.id ?? activeProjectRef.current?.id;
-      if (
-        layoutRef.current &&
-        projectId &&
-        activeProjectRef.current?.id === projectId
-      ) {
-        return layoutRef.current;
+      if (project) {
+        if (project.layout) return project.layout;
+        if (project.id === activeProjectRef.current?.id && layoutRef.current) {
+          return layoutRef.current;
+        }
+        return null;
       }
-      return project?.layout ?? activeProjectRef.current?.layout ?? undefined;
+      const current = activeProjectRef.current;
+      if (!current) return undefined;
+      if (layoutRef.current) return layoutRef.current;
+      return current.layout ?? null;
     },
     []
   );
@@ -238,6 +240,8 @@ export function DashboardApp() {
       let base: DashboardLayout;
       if (projectLayout) {
         base = stripLegacyStarterPack(mergeLayoutWithData(projectLayout, data));
+      } else if (projectLayout === null) {
+        base = createDefaultLayout(urls);
       } else {
         const remote = await fetchRemoteLayout(urls);
         base = remote
@@ -593,6 +597,14 @@ export function DashboardApp() {
   const handleProjectCreated = useCallback(
     (project: Project) => {
       setProjects((prev) => [project, ...prev]);
+      setSheetData(null);
+      setDbDatasets(null);
+      setActiveDbTables([]);
+      setSelectedDataTable("");
+      layoutRef.current = null;
+      setLayout(null);
+      setFilters({});
+      setError(null);
       setActiveProject(project);
       syncProjectToUrl(project.id);
       setShowCreateDialog(false);
