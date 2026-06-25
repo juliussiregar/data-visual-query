@@ -164,7 +164,7 @@ export async function createUserProject(
   const normalizedRelations = normalizeTableRelations(initial?.tableRelations ?? []);
 
   const data: Prisma.ProjectCreateInput = {
-    userId,
+    user: { connect: { id: userId } },
     name: name.trim() || "Project Baru",
     description: description?.trim() || null,
     sheetUrls: initial?.sheetUrls ?? [],
