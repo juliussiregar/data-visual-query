@@ -13,14 +13,18 @@ import type { DatabaseConnectionProfile } from "@/lib/types";
 import {
   connectionToApiPayload,
   fetchDbConnections,
+  removeDbConnection,
 } from "@/lib/datasource-storage";
 import { createProject } from "@/lib/project-storage";
 import type { Project } from "@/lib/project-types";
 import type { ProbeResult, SourceType } from "@/lib/project-source-probe";
 import { probeDatabaseTable, probeSheetUrl } from "@/lib/project-source-probe";
 import { DatabaseConnectionQuickForm } from "./DatabaseConnectionQuickForm";
+import { DatabaseConnectionCard } from "./DatabaseConnectionCard";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { DbTableMultiSelect } from "./DbTableMultiSelect";
 import { ProjectTableRelationsEditor } from "./ProjectTableRelationsEditor";
+import { useToast } from "./ToastProvider";
 import type { TableRelation } from "@/lib/sql-query-types";
 import { cn } from "@/lib/utils";
 
@@ -49,9 +53,16 @@ export function ProjectCreateWizard({ onCreated, onCancel, compact }: ProjectCre
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [loadingTables, setLoadingTables] = useState(false);
   const [showAddConnection, setShowAddConnection] = useState(false);
+  const [editingConnection, setEditingConnection] = useState<DatabaseConnectionProfile | null>(
+    null
+  );
+  const [pendingDeleteConnection, setPendingDeleteConnection] =
+    useState<DatabaseConnectionProfile | null>(null);
+  const [deletingConnection, setDeletingConnection] = useState(false);
   const [phase, setPhase] = useState<Phase>("form");
   const [probeResult, setProbeResult] = useState<ProbeResult | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
+  const { toast } = useToast();
 
   const refreshConnections = useCallback(async () => {
     const list = await fetchDbConnections();
@@ -97,25 +108,53 @@ export function ProjectCreateWizard({ onCreated, onCancel, compact }: ProjectCre
   }, []);
 
   useEffect(() => {
-    if (sourceType !== "database" || !selectedDb || showAddConnection) {
+    if (sourceType !== "database" || !selectedDb || showAddConnection || editingConnection) {
       setTables([]);
       return;
     }
     void fetchTables(selectedDb);
-  }, [sourceType, selectedDb, showAddConnection, fetchTables]);
+  }, [sourceType, selectedDb, showAddConnection, editingConnection, fetchTables]);
+
+  const showConnectionForm =
+    showAddConnection || dbConnections.length === 0 || editingConnection !== null;
 
   const canSubmit =
     name.trim() &&
     (sourceType === "sheet"
       ? sheetUrl.trim()
-      : selectedDb && dbTables.length > 0 && !showAddConnection);
+      : selectedDb && dbTables.length > 0 && !showConnectionForm);
 
   const handleConnectionSaved = async (connection: DatabaseConnectionProfile) => {
     await refreshConnections();
     setSelectedDbId(connection.id);
     setShowAddConnection(false);
+    setEditingConnection(null);
     setDbTables([]);
     void fetchTables(connection);
+  };
+
+  const handleDeleteConnection = async () => {
+    if (!pendingDeleteConnection) return;
+    setDeletingConnection(true);
+    try {
+      const ok = await removeDbConnection(pendingDeleteConnection.id);
+      if (!ok) {
+        toast("Gagal menghapus koneksi", "error");
+        return;
+      }
+      const list = await refreshConnections();
+      if (selectedDbId === pendingDeleteConnection.id) {
+        setSelectedDbId(list[0]?.id ?? "");
+        setDbTables([]);
+      }
+      if (editingConnection?.id === pendingDeleteConnection.id) {
+        setEditingConnection(null);
+      }
+      toast("Koneksi dihapus");
+      setPendingDeleteConnection(null);
+    } finally {
+      setDeletingConnection(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -258,41 +297,50 @@ export function ProjectCreateWizard({ onCreated, onCancel, compact }: ProjectCre
           placeholder="Paste link Google Sheet…"
           className="input-field text-xs"
         />
-      ) : showAddConnection || dbConnections.length === 0 ? (
+      ) : showConnectionForm ? (
         <DatabaseConnectionQuickForm
           compact={compact}
+          initialConnection={editingConnection ?? undefined}
           onSaved={(connection) => void handleConnectionSaved(connection)}
           onCancel={
             dbConnections.length > 0
-              ? () => setShowAddConnection(false)
+              ? () => {
+                  setShowAddConnection(false);
+                  setEditingConnection(null);
+                }
               : undefined
           }
         />
       ) : (
         <div className="space-y-2">
-          <div className="flex items-end gap-2">
-            <label className="min-w-0 flex-1">
-              <span className="mb-1 block text-xs font-medium text-slate-700">Koneksi database</span>
-              <select
-                value={selectedDbId}
-                onChange={(e) => setSelectedDbId(e.target.value)}
-                className="input-field text-xs"
-              >
-                {dbConnections.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <div className="flex items-end justify-between gap-2">
+            <span className="text-xs font-medium text-slate-700">Koneksi database</span>
             <button
               type="button"
-              onClick={() => setShowAddConnection(true)}
+              onClick={() => {
+                setShowAddConnection(true);
+                setEditingConnection(null);
+              }}
               className="btn-ghost shrink-0 gap-1 py-2 text-[11px]"
             >
               <Plus className="h-3.5 w-3.5" />
               Baru
             </button>
+          </div>
+          <div className="space-y-2">
+            {dbConnections.map((connection) => (
+              <DatabaseConnectionCard
+                key={connection.id}
+                connection={connection}
+                selected={connection.id === selectedDbId}
+                onSelect={() => setSelectedDbId(connection.id)}
+                onEdit={() => {
+                  setEditingConnection(connection);
+                  setShowAddConnection(false);
+                }}
+                onDelete={() => setPendingDeleteConnection(connection)}
+              />
+            ))}
           </div>
 
           <div className="space-y-2">
@@ -352,6 +400,19 @@ export function ProjectCreateWizard({ onCreated, onCancel, compact }: ProjectCre
           Buat & muat data
         </button>
       </div>
+
+      {pendingDeleteConnection && (
+        <ConfirmDialog
+          open={Boolean(pendingDeleteConnection)}
+          onClose={() => !deletingConnection && setPendingDeleteConnection(null)}
+          onConfirm={() => void handleDeleteConnection()}
+          title="Hapus koneksi?"
+          description={`Koneksi "${pendingDeleteConnection.name}" akan dihapus permanen. Project yang memakainya perlu diatur ulang.`}
+          confirmLabel="Hapus koneksi"
+          variant="danger"
+          loading={deletingConnection}
+        />
+      )}
     </div>
   );
 }
