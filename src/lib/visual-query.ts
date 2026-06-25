@@ -6,6 +6,7 @@ export type QueryOperator =
   | "contains"
   | "not_contains"
   | "starts_with"
+  | "in"
   | "gt"
   | "gte"
   | "lt"
@@ -13,6 +14,23 @@ export type QueryOperator =
   | "between"
   | "is_empty"
   | "is_not_empty";
+
+/** Daftar kanonik semua operator — sumber tunggal untuk validasi/enum di seluruh app. */
+export const QUERY_OPERATORS: QueryOperator[] = [
+  "equals",
+  "not_equals",
+  "contains",
+  "not_contains",
+  "starts_with",
+  "in",
+  "gt",
+  "gte",
+  "lt",
+  "lte",
+  "between",
+  "is_empty",
+  "is_not_empty",
+];
 
 export interface QueryCondition {
   id: string;
@@ -45,6 +63,7 @@ export const OPERATOR_LABELS: Record<QueryOperator, string> = {
   contains: "contains",
   not_contains: "does not contain",
   starts_with: "starts with",
+  in: "is any of",
   gt: "greater than",
   gte: "at least",
   lt: "less than",
@@ -60,6 +79,7 @@ const TEXT_OPS: QueryOperator[] = [
   "contains",
   "not_contains",
   "starts_with",
+  "in",
   "is_empty",
   "is_not_empty",
 ];
@@ -67,6 +87,7 @@ const TEXT_OPS: QueryOperator[] = [
 const NUMBER_OPS: QueryOperator[] = [
   "equals",
   "not_equals",
+  "in",
   "gt",
   "gte",
   "lt",
@@ -80,6 +101,7 @@ const CATEGORY_OPS: QueryOperator[] = [
   "equals",
   "not_equals",
   "contains",
+  "in",
   "is_empty",
   "is_not_empty",
 ];
@@ -139,6 +161,14 @@ function matchCondition(
       return !lower.includes(valLower);
     case "starts_with":
       return lower.startsWith(valLower);
+    case "in": {
+      // value = daftar dipisah koma/semicolon/pipe, mis. "3,4,5" atau "Akad, SP3K"
+      const set = valLower
+        .split(/[,;|]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      return set.includes(lower);
+    }
     case "gt":
     case "gte":
     case "lt":

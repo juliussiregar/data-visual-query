@@ -2,9 +2,8 @@
 
 import { useState, type CSSProperties } from "react";
 import { Bot, X, Sparkles } from "lucide-react";
-import type { SheetData, ViewId, DashboardLayout, DataScope } from "@/lib/types";
+import type { SheetData, ViewId, DashboardLayout, DataScope, DashboardAction, WidgetProposal, WidgetProposalConfirmResult, WidgetProposalsConfirmResult } from "@/lib/types";
 import type { UserRole } from "@/lib/auth";
-import type { DashboardAction, WidgetProposal, WidgetProposalConfirmResult } from "@/lib/types";
 import { ChatPanel } from "./ChatPanel";
 import { cn } from "@/lib/utils";
 import {
@@ -26,6 +25,7 @@ interface FloatingChatWidgetProps {
   sheetUrls: string[];
   onApplyActions: (actions: DashboardAction[]) => void;
   onConfirmWidgetProposal: (proposal: WidgetProposal) => WidgetProposalConfirmResult;
+  onConfirmWidgetProposals: (proposals: WidgetProposal[]) => WidgetProposalsConfirmResult;
   onUndoWidgetLayout: (snapshot: DashboardLayout) => void;
   onWidgetProposalReceived?: () => void;
 }
@@ -80,6 +80,7 @@ export function FloatingChatWidget({
   sheetUrls,
   onApplyActions,
   onConfirmWidgetProposal,
+  onConfirmWidgetProposals,
   onUndoWidgetLayout,
   onWidgetProposalReceived,
 }: FloatingChatWidgetProps) {
@@ -127,6 +128,7 @@ export function FloatingChatWidget({
             sheetUrls={sheetUrls}
             onApplyActions={onApplyActions}
             onConfirmWidgetProposal={onConfirmWidgetProposal}
+            onConfirmWidgetProposals={onConfirmWidgetProposals}
             onUndoWidgetLayout={onUndoWidgetLayout}
             onWidgetProposalReceived={onWidgetProposalReceived}
             chatSize={chatSize}

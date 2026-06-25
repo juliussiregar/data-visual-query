@@ -1,6 +1,12 @@
 import OpenAI from "openai";
-import type { ChatMessage, DashboardAction, SuggestedFollowUp } from "./types";
-import type { AiQueryDataset, AiQueryFact } from "./types";
+import type {
+  AiQueryDataset,
+  AiQueryFact,
+  ChatMessage,
+  DashboardAction,
+  SuggestedFollowUp,
+  WidgetProposal,
+} from "./types";
 import { CHAT_HISTORY_LIMIT } from "./chat-storage";
 import { buildAnalyticsPack } from "./ai-analytics-pack";
 import {
@@ -12,18 +18,29 @@ import {
   buildChatSystemPrompt,
 } from "./ai-chat-prompt";
 import { parseGuardrailResponse } from "./ai-guardrails";
-import { parseWidgetProposal } from "./widget-proposal";
+import { parseWidgetProposals } from "./widget-proposal";
 
 const MAX_TOOL_ROUNDS = 12;
 
 export interface ChatRunContext {
   dashboardContextBlock: string;
+  /** Diset saat user mengklik chip aksi (mis. follow-up kind "widget"). */
+  intent?: "create_widget";
+  /** Izinkan tool membaca kolom sensitif (PII) — ditentukan dari izin role user. */
+  allowSensitive?: boolean;
 }
+
+const FORCE_WIDGET_INSTRUCTION = `PENTING — KONTEKS AKSI: User baru saja MENGKLIK tombol untuk membuat/mengubah widget. Ini PERSETUJUAN EKSPLISIT, bukan pertanyaan.
+WAJIB pada respons FINAL ini:
+- Isi "widgetProposals" dengan minimal satu proposal valid (operation "create" atau "update") sesuai permintaan user. Jika user minta beberapa widget, isi beberapa item.
+- Isi visualShape, title, groupByKey/measureKey/aggregation, dan validationQuestion + summary.
+- Jika permintaan/analisis ber-scope (mis. "di Jawa Barat", "status Akad"), WAJIB isi "conditions" yang sama — jangan beri judul ber-scope tapi data tanpa filter.
+- DILARANG hanya menawarkan ulang atau bertanya konfirmasi ("Mau saya siapkan…?"). Langsung buat proposalnya.`;
 
 export interface ChatRunResult {
   reply: string;
   actions: DashboardAction[];
-  widgetProposal: ReturnType<typeof parseWidgetProposal>;
+  widgetProposals: WidgetProposal[];
   guardrail: ReturnType<typeof parseGuardrailResponse>;
   suggestedFollowUps: SuggestedFollowUp[];
   queryFacts: AiQueryFact[];
@@ -46,7 +63,7 @@ function parseSuggestedFollowUps(raw: unknown): SuggestedFollowUp[] {
       };
     })
     .filter((f) => f.label && f.message)
-    .slice(0, 5);
+    .slice(0, 4);
 }
 
 function parseFinalChatResponse(raw: string): Omit<ChatRunResult, "queryFacts"> {
@@ -55,15 +72,21 @@ function parseFinalChatResponse(raw: string): Omit<ChatRunResult, "queryFacts"> 
       reply?: string;
       actions?: DashboardAction[];
       widgetProposal?: unknown;
+      widgetProposals?: unknown;
       suggestedFollowUps?: unknown;
       assumptions?: string[];
       sources?: string[];
       confidence?: string;
     };
+    // Terima "widgetProposals" (array) maupun "widgetProposal" (tunggal, kompat).
+    const widgetProposals = parseWidgetProposals(parsed.widgetProposals ?? parsed.widgetProposal);
     return {
-      reply: parsed.reply ?? raw,
+      reply:
+        typeof parsed.reply === "string" && parsed.reply.trim()
+          ? parsed.reply
+          : "Maaf, saya tidak bisa menyusun jawaban. Coba ulangi pertanyaan Anda.",
       actions: Array.isArray(parsed.actions) ? parsed.actions : [],
-      widgetProposal: parseWidgetProposal(parsed.widgetProposal),
+      widgetProposals,
       guardrail: parseGuardrailResponse(parsed),
       suggestedFollowUps: parseSuggestedFollowUps(parsed.suggestedFollowUps),
     };
@@ -71,7 +94,7 @@ function parseFinalChatResponse(raw: string): Omit<ChatRunResult, "queryFacts"> 
     return {
       reply: raw,
       actions: [],
-      widgetProposal: null,
+      widgetProposals: [],
       guardrail: { assumptions: [], sources: [], confidence: "medium" },
       suggestedFollowUps: [],
     };
@@ -85,7 +108,7 @@ export async function runAiChatWithTools(
   messages: ChatMessage[],
   ctx: ChatRunContext
 ): Promise<ChatRunResult> {
-  const analyticsPack = buildAnalyticsPack(dataset);
+  const analyticsPack = buildAnalyticsPack(dataset, ctx.allowSensitive ?? false);
   const systemContent = `${buildChatSystemPrompt()}\n\n--- ANALYTICS PACK ---\n${analyticsPack}${ctx.dashboardContextBlock}`;
 
   const recentMessages = messages.slice(-CHAT_HISTORY_LIMIT);
@@ -99,6 +122,8 @@ export async function runAiChatWithTools(
   ];
 
   const queryFacts: AiQueryFact[] = [];
+  // Cache hasil per (nama+argumen) — cegah model mengulang tool call yang sama berkali-kali.
+  const toolCache = new Map<string, unknown>();
   let rounds = 0;
 
   while (rounds < MAX_TOOL_ROUNDS) {
@@ -107,7 +132,7 @@ export async function runAiChatWithTools(
       model,
       messages: chatMessages,
       tools: AI_QUERY_TOOL_DEFINITIONS,
-      tool_choice: rounds === 1 ? "auto" : "auto",
+      tool_choice: "auto",
       temperature: 0.2,
       max_tokens: 4096,
     });
@@ -123,19 +148,53 @@ export async function runAiChatWithTools(
 
     chatMessages.push(choice);
 
+    let allDuplicate = true;
     for (const call of toolCalls) {
-      if (call.type !== "function") continue;
-      const { result, fact } = executeAiQueryTool(dataset, call.function.name, call.function.arguments);
-      queryFacts.push(fact);
+      // Setiap tool_call_id WAJIB dibalas dengan tool message, kalau tidak
+      // request berikutnya ke OpenAI akan error 400.
+      if (call.type !== "function") {
+        allDuplicate = false;
+        chatMessages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: JSON.stringify({ error: `Tipe tool call tidak didukung: ${call.type}` }),
+        });
+        continue;
+      }
+
+      const signature = `${call.function.name}:${call.function.arguments}`;
+      let result: unknown;
+      if (toolCache.has(signature)) {
+        // Panggilan identik sudah dieksekusi — pakai hasil cache, jangan duplikat fact.
+        result = toolCache.get(signature);
+      } else {
+        allDuplicate = false;
+        const exec = executeAiQueryTool(
+          dataset,
+          call.function.name,
+          call.function.arguments,
+          ctx.allowSensitive ?? false
+        );
+        result = exec.result;
+        toolCache.set(signature, result);
+        queryFacts.push(exec.fact);
+      }
       chatMessages.push({
         role: "tool",
         tool_call_id: call.id,
         content: JSON.stringify(result, null, 2),
       });
     }
+
+    // Model hanya mengulang tool call yang sama → hentikan loop, lanjut ke jawaban final.
+    if (allDuplicate) break;
   }
 
-  chatMessages.push({ role: "user", content: AI_FINAL_JSON_INSTRUCTION });
+  const finalInstruction =
+    ctx.intent === "create_widget"
+      ? `${AI_FINAL_JSON_INSTRUCTION}\n\n${FORCE_WIDGET_INSTRUCTION}`
+      : AI_FINAL_JSON_INSTRUCTION;
+  chatMessages.push({ role: "user", content: finalInstruction });
 
   const finalCompletion = await openai.chat.completions.create({
     model,

@@ -16,8 +16,9 @@ interface ChatWidgetPreviewModalProps {
   data: SheetData;
   layout: DashboardLayout;
   onClose: () => void;
-  onConfirm: () => void;
-  onReject: () => void;
+  /** Tanpa onConfirm → modal jadi view-only (mis. preview dari daftar multi-widget). */
+  onConfirm?: () => void;
+  onReject?: () => void;
 }
 
 export function ChatWidgetPreviewModal({
@@ -119,33 +120,45 @@ export function ChatWidgetPreviewModal({
         </div>
 
         <div className="flex shrink-0 flex-col gap-2 border-t border-slate-200 bg-white px-5 py-4 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={() => {
-              onReject();
-              onClose();
-            }}
-            className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            Belum sesuai — ubah lagi
-          </button>
-          <button
-            type="button"
-            disabled={!canConfirm}
-            onClick={() => {
-              onConfirm();
-              onClose();
-            }}
-            className={cn(
-              "flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all",
-              canConfirm
-                ? "bg-gradient-to-br from-emerald-500 to-emerald-600 hover:shadow-emerald-500/30"
-                : "cursor-not-allowed bg-slate-300"
-            )}
-          >
-            <Check className="h-4 w-4" />
-            {isDelete ? "Ya, hapus widget" : "Ya, terapkan ke dashboard"}
-          </button>
+          {onConfirm ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  onReject?.();
+                  onClose();
+                }}
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Belum sesuai — ubah lagi
+              </button>
+              <button
+                type="button"
+                disabled={!canConfirm}
+                onClick={() => {
+                  onConfirm();
+                  onClose();
+                }}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all",
+                  canConfirm
+                    ? "bg-gradient-to-br from-emerald-500 to-emerald-600 hover:shadow-emerald-500/30"
+                    : "cursor-not-allowed bg-slate-300"
+                )}
+              >
+                <Check className="h-4 w-4" />
+                {isDelete ? "Ya, hapus widget" : "Ya, terapkan ke dashboard"}
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Tutup
+            </button>
+          )}
         </div>
       </div>
     </div>,

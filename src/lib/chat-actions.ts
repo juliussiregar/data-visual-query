@@ -106,22 +106,25 @@ export function applyLayoutActions(
         break;
       case "add_sheet":
         if (!next.sheetUrls.includes(action.url)) {
+          const sheetUrls = [...next.sheetUrls, action.url];
           next = {
             ...next,
-            sheetUrls: [...next.sheetUrls, action.url],
-            mergeMode: next.sheetUrls.length >= 1,
+            sheetUrls,
+            mergeMode: sheetUrls.length > 1,
             updatedAt: new Date().toISOString(),
           };
         }
         break;
-      case "remove_sheet":
+      case "remove_sheet": {
+        const sheetUrls = next.sheetUrls.filter((u) => u !== action.url);
         next = {
           ...next,
-          sheetUrls: next.sheetUrls.filter((u) => u !== action.url),
-          mergeMode: next.sheetUrls.length > 2,
+          sheetUrls,
+          mergeMode: sheetUrls.length > 1,
           updatedAt: new Date().toISOString(),
         };
         break;
+      }
       case "reset_layout":
         break;
       default:

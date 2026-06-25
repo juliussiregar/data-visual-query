@@ -222,6 +222,13 @@ export type WidgetProposalConfirmResult = {
   layoutSnapshot?: DashboardLayout;
 };
 
+export type WidgetProposalsConfirmResult = {
+  ok: boolean;
+  appliedCount: number;
+  errors: string[];
+  layoutSnapshot?: DashboardLayout;
+};
+
 export interface WidgetProposal {
   operation: WidgetProposalOperation;
   /** Wajib untuk update/delete (atau pakai widgetRef) */
@@ -249,8 +256,12 @@ export interface WidgetProposal {
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  /** Teks yang ditampilkan di bubble (mis. label chip yang diklik); fallback ke content. */
+  displayContent?: string;
   actions?: DashboardAction[];
   widgetProposal?: WidgetProposal;
+  /** Beberapa proposal sekaligus (mis. user minta beberapa widget). Item pertama = widgetProposal (kompat). */
+  widgetProposals?: WidgetProposal[];
   /** Proposal sudah dikonfirmasi/ditolak user */
   proposalStatus?: "pending" | "confirmed" | "rejected";
   /** Snapshot layout sebelum diterapkan — untuk undo (tidak disimpan ke localStorage) */

@@ -7,7 +7,7 @@ import { getDistinctValues } from "./visual-query";
  * Ringkasan analitik lengkap untuk konteks AI.
  * Angka spesifik tetap harus lewat query tools — ini adalah peta data.
  */
-export function buildAnalyticsPack(dataset: AiQueryDataset): string {
+export function buildAnalyticsPack(dataset: AiQueryDataset, allowSensitive = false): string {
   const { columns, rows, totalRowCount } = dataset;
   const lines: string[] = [];
 
@@ -45,7 +45,8 @@ export function buildAnalyticsPack(dataset: AiQueryDataset): string {
   lines.push(`\n--- Profil kolom ---`);
   for (const col of columns) {
     const label = col.businessLabel ?? col.label;
-    const samples = col.sensitive ? ["[PII]"] : col.sampleValues.slice(0, 5);
+    const samples =
+      col.sensitive && !allowSensitive ? ["[PII]"] : col.sampleValues.slice(0, 5);
     lines.push(
       `• ${label} (key: ${col.key}, type: ${col.type}${col.semanticRole ? `, role: ${col.semanticRole}` : ""}) — ${col.uniqueCount} unik, fill ${col.fillRate}% — contoh: ${samples.join(", ")}`
     );
@@ -80,7 +81,7 @@ export function buildAnalyticsPack(dataset: AiQueryDataset): string {
   }
 
   lines.push(`\n--- Nilai unik per kolom (maks 40) ---`);
-  for (const col of columns.filter((c) => !c.sensitive)) {
+  for (const col of columns.filter((c) => allowSensitive || !c.sensitive)) {
     const vals = getDistinctValues(rows, col.key, 40);
     if (vals.length === 0) continue;
     const label = col.businessLabel ?? col.label;

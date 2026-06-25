@@ -5,6 +5,7 @@ import { aggregateData } from "./aggregation";
 import { parseNumber, formatNumber, formatCurrency } from "./format";
 import {
   applyVisualQuery,
+  QUERY_OPERATORS,
   type QueryOperator,
   type VisualQuery,
 } from "./visual-query";
@@ -17,21 +18,6 @@ export type AiToolName =
   | "distinct_values"
   | "compare_groups"
   | "column_stats";
-
-const OPERATORS: QueryOperator[] = [
-  "equals",
-  "not_equals",
-  "contains",
-  "not_contains",
-  "starts_with",
-  "gt",
-  "gte",
-  "lt",
-  "lte",
-  "between",
-  "is_empty",
-  "is_not_empty",
-];
 
 type FilterInput = {
   column: string;
@@ -49,6 +35,10 @@ function columnLabel(dataset: AiQueryDataset, key: string): string {
   return col?.businessLabel ?? col?.label ?? key;
 }
 
+function isSensitive(dataset: AiQueryDataset, key: string): boolean {
+  return dataset.columns.find((c) => c.key === key)?.sensitive ?? false;
+}
+
 function filtersToQuery(
   dataset: AiQueryDataset,
   filters?: FilterInput[],
@@ -58,7 +48,7 @@ function filtersToQuery(
     .map((f, i) => {
       const columnKey = resolveColumn(dataset, f.column);
       if (!columnKey) return null;
-      const op = OPERATORS.includes(f.operator as QueryOperator)
+      const op = QUERY_OPERATORS.includes(f.operator as QueryOperator)
         ? (f.operator as QueryOperator)
         : "equals";
       return {
@@ -96,7 +86,7 @@ function formatAggValue(
     col?.label.toLowerCase().includes("nominal");
   if (aggregation === "count") return String(Math.round(value));
   if (isMoney) return formatCurrency(value);
-  return Number.isInteger(value) ? formatNumber(value) : formatNumber(value);
+  return formatNumber(value);
 }
 
 function aggregateOnRows(
@@ -153,7 +143,7 @@ export const AI_QUERY_TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = [
                 column: { type: "string", description: "Nama atau key kolom" },
                 operator: {
                   type: "string",
-                  enum: OPERATORS,
+                  enum: QUERY_OPERATORS,
                 },
                 value: { type: "string" },
                 value_to: { type: "string", description: "Untuk operator between" },
@@ -189,7 +179,7 @@ export const AI_QUERY_TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = [
               type: "object",
               properties: {
                 column: { type: "string" },
-                operator: { type: "string", enum: OPERATORS },
+                operator: { type: "string", enum: QUERY_OPERATORS },
                 value: { type: "string" },
                 value_to: { type: "string" },
               },
@@ -223,7 +213,7 @@ export const AI_QUERY_TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = [
               type: "object",
               properties: {
                 column: { type: "string" },
-                operator: { type: "string", enum: OPERATORS },
+                operator: { type: "string", enum: QUERY_OPERATORS },
                 value: { type: "string" },
               },
               required: ["column"],
@@ -253,7 +243,7 @@ export const AI_QUERY_TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = [
               type: "object",
               properties: {
                 column: { type: "string" },
-                operator: { type: "string", enum: OPERATORS },
+                operator: { type: "string", enum: QUERY_OPERATORS },
                 value: { type: "string" },
               },
               required: ["column"],
@@ -285,7 +275,7 @@ export const AI_QUERY_TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = [
               type: "object",
               properties: {
                 column: { type: "string" },
-                operator: { type: "string", enum: OPERATORS },
+                operator: { type: "string", enum: QUERY_OPERATORS },
                 value: { type: "string" },
               },
               required: ["column"],
@@ -312,7 +302,7 @@ export const AI_QUERY_TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = [
               type: "object",
               properties: {
                 column: { type: "string" },
-                operator: { type: "string", enum: OPERATORS },
+                operator: { type: "string", enum: QUERY_OPERATORS },
                 value: { type: "string" },
               },
               required: ["column", "value"],
@@ -325,7 +315,7 @@ export const AI_QUERY_TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = [
               type: "object",
               properties: {
                 column: { type: "string" },
-                operator: { type: "string", enum: OPERATORS },
+                operator: { type: "string", enum: QUERY_OPERATORS },
                 value: { type: "string" },
               },
               required: ["column", "value"],
@@ -356,7 +346,7 @@ export const AI_QUERY_TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = [
               type: "object",
               properties: {
                 column: { type: "string" },
-                operator: { type: "string", enum: OPERATORS },
+                operator: { type: "string", enum: QUERY_OPERATORS },
                 value: { type: "string" },
               },
               required: ["column"],
@@ -372,7 +362,8 @@ export const AI_QUERY_TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = [
 export function executeAiQueryTool(
   dataset: AiQueryDataset,
   name: string,
-  argsJson: string
+  argsJson: string,
+  allowSensitive = false
 ): { result: unknown; fact: AiQueryFact } {
   let args: Record<string, unknown> = {};
   try {
@@ -391,15 +382,15 @@ export function executeAiQueryTool(
       case "aggregate_column":
         return execAggregateColumn(dataset, args);
       case "group_by":
-        return execGroupBy(dataset, args);
+        return execGroupBy(dataset, args, allowSensitive);
       case "top_rows":
-        return execTopRows(dataset, args);
+        return execTopRows(dataset, args, allowSensitive);
       case "distinct_values":
-        return execDistinctValues(dataset, args);
+        return execDistinctValues(dataset, args, allowSensitive);
       case "compare_groups":
         return execCompareGroups(dataset, args);
       case "column_stats":
-        return execColumnStats(dataset, args);
+        return execColumnStats(dataset, args, allowSensitive);
       default:
         return {
           result: { error: `Tool tidak dikenal: ${name}` },
@@ -471,13 +462,24 @@ function execAggregateColumn(dataset: AiQueryDataset, args: Record<string, unkno
   };
 }
 
-function execGroupBy(dataset: AiQueryDataset, args: Record<string, unknown>) {
+function execGroupBy(
+  dataset: AiQueryDataset,
+  args: Record<string, unknown>,
+  allowSensitive: boolean
+) {
   const groupRef = args.group_by_column as string;
   const groupKey = resolveColumn(dataset, groupRef);
   if (!groupKey) {
     return {
       result: { error: `Kolom grup tidak ditemukan: ${groupRef}` },
       fact: { tool: "group_by", summary: `Grup tidak ditemukan: ${groupRef}` },
+    };
+  }
+
+  if (!allowSensitive && isSensitive(dataset, groupKey)) {
+    return {
+      result: { error: `Kolom "${columnLabel(dataset, groupKey)}" berisi data sensitif (PII) — tidak boleh dipakai sebagai dimensi pengelompokan.` },
+      fact: { tool: "group_by", summary: `Grup PII ${columnLabel(dataset, groupKey)} ditolak` },
     };
   }
 
@@ -517,7 +519,11 @@ function execGroupBy(dataset: AiQueryDataset, args: Record<string, unknown>) {
   };
 }
 
-function execTopRows(dataset: AiQueryDataset, args: Record<string, unknown>) {
+function execTopRows(
+  dataset: AiQueryDataset,
+  args: Record<string, unknown>,
+  allowSensitive: boolean
+) {
   const sortRef = args.sort_column as string;
   const sortKey = resolveColumn(dataset, sortRef);
   if (!sortKey) {
@@ -539,14 +545,15 @@ function execTopRows(dataset: AiQueryDataset, args: Record<string, unknown>) {
   };
   const sorted = applyVisualQuery(dataset.rows, query, dataset.columns).slice(0, limit);
 
-  const displayKeys =
+  const displayKeys = (
     displayRefs
       ?.map((r) => resolveColumn(dataset, r))
       .filter((k): k is string => Boolean(k)) ??
     dataset.columns
       .filter((c) => c.key.trim() && !c.sensitive)
       .slice(0, 6)
-      .map((c) => c.key);
+      .map((c) => c.key)
+  ).filter((key) => allowSensitive || !isSensitive(dataset, key));
 
   const rows = sorted.map((row) => {
     const out: Record<string, string> = {};
@@ -571,13 +578,24 @@ function execTopRows(dataset: AiQueryDataset, args: Record<string, unknown>) {
   };
 }
 
-function execDistinctValues(dataset: AiQueryDataset, args: Record<string, unknown>) {
+function execDistinctValues(
+  dataset: AiQueryDataset,
+  args: Record<string, unknown>,
+  allowSensitive: boolean
+) {
   const colRef = args.column as string;
   const colKey = resolveColumn(dataset, colRef);
   if (!colKey) {
     return {
       result: { error: `Kolom tidak ditemukan: ${colRef}` },
       fact: { tool: "distinct_values", summary: `Kolom tidak ditemukan` },
+    };
+  }
+
+  if (!allowSensitive && isSensitive(dataset, colKey)) {
+    return {
+      result: { error: `Kolom "${columnLabel(dataset, colKey)}" berisi data sensitif (PII) — nilainya tidak boleh ditampilkan.` },
+      fact: { tool: "distinct_values", summary: `Kolom PII ${columnLabel(dataset, colKey)} ditolak` },
     };
   }
 
@@ -652,13 +670,24 @@ function execCompareGroups(dataset: AiQueryDataset, args: Record<string, unknown
   };
 }
 
-function execColumnStats(dataset: AiQueryDataset, args: Record<string, unknown>) {
+function execColumnStats(
+  dataset: AiQueryDataset,
+  args: Record<string, unknown>,
+  allowSensitive: boolean
+) {
   const colRef = args.column as string;
   const colKey = resolveColumn(dataset, colRef);
   if (!colKey) {
     return {
       result: { error: `Kolom tidak ditemukan: ${colRef}` },
       fact: { tool: "column_stats", summary: `Kolom tidak ditemukan` },
+    };
+  }
+
+  if (!allowSensitive && isSensitive(dataset, colKey)) {
+    return {
+      result: { error: `Kolom "${columnLabel(dataset, colKey)}" berisi data sensitif (PII) — statistik nilainya tidak boleh ditampilkan.` },
+      fact: { tool: "column_stats", summary: `Kolom PII ${columnLabel(dataset, colKey)} ditolak` },
     };
   }
 

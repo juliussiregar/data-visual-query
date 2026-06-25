@@ -11,7 +11,7 @@ import { findColumnKey } from "./chat-actions";
 import { createWidgetFromShape, getShapeDef, WIDGET_SHAPES } from "./widget-catalog";
 import { validateWidgetConfig } from "./widget-data";
 import { widgetLabel } from "./layout";
-import type { QueryCondition, QueryOperator } from "./visual-query";
+import { QUERY_OPERATORS, type QueryCondition, type QueryOperator } from "./visual-query";
 
 const SHAPES: WidgetVisualShape[] = [
   "stat",
@@ -24,21 +24,6 @@ const SHAPES: WidgetVisualShape[] = [
 ];
 
 const AGGREGATIONS: WidgetAggregation[] = ["count", "sum", "avg", "min", "max"];
-
-const OPERATORS: QueryOperator[] = [
-  "equals",
-  "not_equals",
-  "contains",
-  "not_contains",
-  "starts_with",
-  "gt",
-  "gte",
-  "lt",
-  "lte",
-  "between",
-  "is_empty",
-  "is_not_empty",
-];
 
 function resolveColumn(ref: string | undefined, columns: SheetData["columns"]): string | undefined {
   if (!ref?.trim()) return undefined;
@@ -61,7 +46,7 @@ function toQueryConditions(
     .map((c, i) => {
       const columnKey = resolveColumn(c.column, columns);
       if (!columnKey) return null;
-      const operator = OPERATORS.includes(c.operator) ? c.operator : "equals";
+      const operator = QUERY_OPERATORS.includes(c.operator) ? c.operator : "equals";
       return {
         id: `ai-cond-${i}`,
         columnKey,
@@ -126,8 +111,12 @@ export function normalizeWidgetProposal(
   data: SheetData
 ): WidgetProposal {
   if (proposal.widgetId) return proposal;
-  if (!proposal.widgetRef?.trim()) return proposal;
-  const found = findWidgetByRef(proposal.widgetRef, layout, data);
+  // update/delete: jika widgetRef kosong, pakai title sebagai referensi natural ke widget yang ada.
+  const ref =
+    proposal.widgetRef?.trim() ||
+    (proposal.operation !== "create" ? proposal.title?.trim() : undefined);
+  if (!ref) return proposal;
+  const found = findWidgetByRef(ref, layout, data);
   if (!found) return proposal;
   return { ...proposal, widgetId: found.id };
 }
@@ -143,6 +132,14 @@ function applyShapeChange(base: WidgetConfig, newShape: WidgetVisualShape): Widg
   };
 }
 
+/** Parse satu ATAU banyak proposal. Terima array, objek tunggal, atau null. */
+export function parseWidgetProposals(raw: unknown): WidgetProposal[] {
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list
+    .map((item) => parseWidgetProposal(item))
+    .filter((p): p is WidgetProposal => p !== null);
+}
+
 export function parseWidgetProposal(raw: unknown): WidgetProposal | null {
   if (!raw || typeof raw !== "object") return null;
   const p = raw as Record<string, unknown>;
@@ -154,10 +151,18 @@ export function parseWidgetProposal(raw: unknown): WidgetProposal | null {
   const summary = typeof p.summary === "string" ? p.summary.trim() : "";
   if (!validationQuestion || !summary) return null;
 
-  const visualShape =
+  let visualShape =
     typeof p.visualShape === "string" && SHAPES.includes(p.visualShape as WidgetVisualShape)
       ? (p.visualShape as WidgetVisualShape)
       : undefined;
+
+  // Fallback: create tanpa visualShape → infer dari field (ada dimensi → bar, hanya measure → stat).
+  if (!visualShape && operation === "create") {
+    const hasGroup = typeof p.groupByKey === "string" && p.groupByKey.trim().length > 0;
+    const hasMeasure = typeof p.measureKey === "string" && p.measureKey.trim().length > 0;
+    if (hasGroup) visualShape = "bar";
+    else if (hasMeasure) visualShape = "stat";
+  }
 
   const aggregation =
     typeof p.aggregation === "string" && AGGREGATIONS.includes(p.aggregation as WidgetAggregation)
@@ -170,7 +175,7 @@ export function parseWidgetProposal(raw: unknown): WidgetProposal | null {
       .filter((c): c is Record<string, unknown> => !!c && typeof c === "object")
       .map((c) => ({
         column: String(c.column ?? ""),
-        operator: (OPERATORS.includes(c.operator as QueryOperator)
+        operator: (QUERY_OPERATORS.includes(c.operator as QueryOperator)
           ? c.operator
           : "equals") as QueryOperator,
         value: String(c.value ?? ""),

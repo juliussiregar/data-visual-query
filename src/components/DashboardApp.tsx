@@ -8,7 +8,7 @@ import {
   Menu,
   X,
 } from "lucide-react";
-import type { SheetData, ViewId, DashboardLayout, DashboardAction, DataScope, WidgetProposal, WidgetProposalConfirmResult } from "@/lib/types";
+import type { SheetData, ViewId, DashboardLayout, DashboardAction, DataScope, WidgetProposal, WidgetProposalConfirmResult, WidgetProposalsConfirmResult } from "@/lib/types";
 import { applyWidgetProposal, cloneLayout } from "@/lib/widget-proposal";
 import { reanalyze, type Filters } from "@/lib/filters";
 import { computeDataAlerts } from "@/lib/alerts";
@@ -764,9 +764,8 @@ export function DashboardApp() {
             needsReload = nextUrls.length > 1;
             break;
           case "reset_layout":
-            if (sheetData) {
-              setLayout(createDefaultLayout(sheetUrls));
-            }
+            // Penanganan sebenarnya dilakukan di bawah (base layout) agar tidak
+            // tertimpa oleh applyLayoutActions.
             break;
           default:
             break;
@@ -774,15 +773,20 @@ export function DashboardApp() {
       }
 
       if (layout) {
-        const nextLayout = applyLayoutActions(layout, actions, columns);
+        const hasReset = actions.some((a) => a.type === "reset_layout");
+        const baseLayout = hasReset ? createDefaultLayout(sheetUrls) : layout;
+        const nextLayout = applyLayoutActions(baseLayout, actions, columns);
         setLayout(nextLayout);
+        if (perms.canEditLayout && nextLayout !== layout) {
+          void flushSave(nextLayout);
+        }
       }
 
       if (needsReload && nextUrls.length > 0) {
         loadSheets(nextUrls, nextMerge);
       }
     },
-    [sheetData, sheetUrls, layout, loadSheets]
+    [sheetData, sheetUrls, layout, loadSheets, perms.canEditLayout, flushSave]
   );
 
   const handleWidgetProposalReceived = useCallback(() => {
@@ -825,6 +829,46 @@ export function DashboardApp() {
             : "Widget ditambahkan ke Overview"
       );
       return { ok: true, layoutSnapshot: snapshot };
+    },
+    [layout, perms.canEditLayout, viewData, sheetData, flushSave, userRole, toast]
+  );
+
+  const handleConfirmWidgetProposals = useCallback(
+    (proposals: WidgetProposal[]): WidgetProposalsConfirmResult => {
+      if (!layout || !perms.canEditLayout) {
+        return { ok: false, appliedCount: 0, errors: ["Tidak diizinkan mengubah layout"] };
+      }
+      const dataForWidget = viewData ?? sheetData;
+      if (!dataForWidget) return { ok: false, appliedCount: 0, errors: ["Data belum siap"] };
+
+      const snapshot = cloneLayout(layout);
+      let working = layout;
+      const errors: string[] = [];
+      let applied = 0;
+      for (const proposal of proposals) {
+        const { layout: next, error } = applyWidgetProposal(working, dataForWidget, proposal);
+        if (error) {
+          errors.push(error);
+          continue;
+        }
+        working = next;
+        applied += 1;
+      }
+
+      if (applied === 0) {
+        if (errors.length) toast(errors[0]);
+        return { ok: false, appliedCount: 0, errors };
+      }
+
+      setLayout(working);
+      void flushSave(working);
+      setActiveView("overview");
+      setMobileNav(false);
+      logAuditClient("layout_change", `AI widget batch: ${applied} widget`, { count: applied }, userRole);
+      toast(
+        `${applied} widget ditambahkan ke Overview${errors.length ? ` · ${errors.length} gagal` : ""}`
+      );
+      return { ok: true, appliedCount: applied, errors, layoutSnapshot: snapshot };
     },
     [layout, perms.canEditLayout, viewData, sheetData, flushSave, userRole, toast]
   );
@@ -1229,6 +1273,7 @@ export function DashboardApp() {
               sheetUrls={sheetUrls}
               onApplyActions={applyChatActions}
               onConfirmWidgetProposal={handleConfirmWidgetProposal}
+              onConfirmWidgetProposals={handleConfirmWidgetProposals}
               onUndoWidgetLayout={handleUndoWidgetLayout}
               onWidgetProposalReceived={handleWidgetProposalReceived}
             />
