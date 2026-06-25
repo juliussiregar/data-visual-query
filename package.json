@@ -7,7 +7,7 @@
   },
   "packageManager": "npm@10.8.2",
   "scripts": {
-    "dev": "next dev",
+    "dev": "prisma generate && next dev",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
@@ -21,7 +21,14 @@
     "db:reconcile": "node scripts/db-reconcile.mjs",
     "db:reader-role": "node scripts/setup-reader-role.mjs",
     "db:reset": "node scripts/with-db-url.mjs migrate reset",
-    "db:reset-workspace": "node scripts/reset-workspace.mjs"
+    "db:reset-workspace": "node scripts/reset-workspace.mjs",
+    "analytics:seed": "node scripts/seed-analytics-iot.mjs",
+    "analytics:reader-role": "node scripts/setup-analytics-reader.mjs",
+    "analytics:setup": "docker compose up -d analytics-db && node scripts/seed-analytics-iot.mjs && node scripts/setup-analytics-reader.mjs",
+    "mysql:seed": "node scripts/seed-mysql-analytics.mjs",
+    "mysql:reader-role": "node scripts/setup-mysql-analytics-reader.mjs",
+    "mysql:setup": "docker compose up -d mysql-analytics-db && node scripts/seed-mysql-analytics.mjs && node scripts/setup-mysql-analytics-reader.mjs",
+    "verify:join": "tsx scripts/verify-join-app.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -31,6 +38,7 @@
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "lucide-react": "^0.511.0",
+    "mysql2": "^3.22.5",
     "next": "16.2.9",
     "openai": "^6.43.0",
     "papaparse": "^5.5.3",

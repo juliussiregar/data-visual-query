@@ -1,26 +1,25 @@
 "use client";
 
-import { FolderKanban, Loader2, Plug, Plus, Settings } from "lucide-react";
+import { FolderKanban, Loader2, Plus, Settings } from "lucide-react";
 import type { Project } from "@/lib/project-types";
 import { projectHasSource } from "@/lib/project-source-probe";
-import { cn } from "@/lib/utils";
 
 interface WelcomeViewProps {
   project: Project | null;
   loading?: boolean;
   loadingMessage?: string;
+  error?: string | null;
   onCreateProject: () => void;
   onOpenSettings: () => void;
-  onVerifyAndLoad: () => void;
 }
 
 export function WelcomeView({
   project,
   loading,
   loadingMessage,
+  error,
   onCreateProject,
   onOpenSettings,
-  onVerifyAndLoad,
 }: WelcomeViewProps) {
   if (loading) {
     return (
@@ -53,7 +52,29 @@ export function WelcomeView({
     );
   }
 
-  const hasSource = projectHasSource(project);
+  if (projectHasSource(project)) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center">
+        {error ? (
+          <>
+            <p className="text-sm font-medium text-red-700">{error}</p>
+            <p className="mt-2 max-w-sm text-xs text-slate-500">
+              Periksa koneksi atau pengaturan sumber data project ini.
+            </p>
+            <button type="button" onClick={onOpenSettings} className="btn-primary mt-5 text-sm">
+              <Settings className="h-4 w-4" />
+              Atur sumber data
+            </button>
+          </>
+        ) : (
+          <>
+            <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+            <p className="mt-4 text-sm text-slate-600">Menyiapkan dashboard…</p>
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
@@ -61,34 +82,17 @@ export function WelcomeView({
         <p className="text-xs font-medium uppercase tracking-wide text-indigo-600">
           {project.name}
         </p>
-        <h2 className="mt-2 text-xl font-semibold text-slate-900">
-          {hasSource ? "Langkah terakhir: muat data" : "Langkah 1: hubungkan sumber"}
-        </h2>
+        <h2 className="mt-2 text-xl font-semibold text-slate-900">Hubungkan sumber data</h2>
         <p className="mt-2 text-sm text-slate-500">
-          {hasSource
-            ? "Kami memeriksa koneksi dulu, lalu menampilkan overview dengan widget awal."
-            : "Tambahkan Google Sheet publik atau tabel PostgreSQL ke project ini."}
+          Tambahkan Google Sheet publik atau koneksi database SQL ke project ini.
         </p>
       </div>
 
       <div className="mx-auto mt-8 flex max-w-sm flex-col gap-2">
-        {!hasSource ? (
-          <button type="button" onClick={onOpenSettings} className="btn-primary w-full text-sm">
-            <Settings className="h-4 w-4" />
-            Atur sumber data
-          </button>
-        ) : (
-          <button type="button" onClick={onVerifyAndLoad} className="btn-primary w-full text-sm">
-            <Plug className="h-4 w-4" />
-            Cek koneksi & muat data
-          </button>
-        )}
-        {hasSource && (
-          <button type="button" onClick={onOpenSettings} className={cn("btn-ghost w-full text-sm")}>
-            <Settings className="h-4 w-4" />
-            Ubah sumber
-          </button>
-        )}
+        <button type="button" onClick={onOpenSettings} className="btn-primary w-full text-sm">
+          <Settings className="h-4 w-4" />
+          Atur sumber data
+        </button>
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import type { DatabaseConnectionProfile } from "@/lib/types";
 import { connectionToApiPayload } from "@/lib/datasource-storage";
+import { resolveProjectDbTables } from "@/lib/db-table-datasets";
 
 export type SourceType = "sheet" | "database";
 
@@ -100,20 +101,22 @@ export async function probeDatabaseTable(
 export function projectHasSource(project: {
   sheetUrls: string[];
   activeDbConnectionId: string | null;
-  activeDbTable: string | null;
+  activeDbTable?: string | null;
+  activeDbTables?: string[];
 }): boolean {
   return (
     project.sheetUrls.length > 0 ||
-    Boolean(project.activeDbConnectionId && project.activeDbTable?.trim())
+    Boolean(project.activeDbConnectionId && resolveProjectDbTables(project).length > 0)
   );
 }
 
 export function projectSourceType(project: {
   sheetUrls: string[];
   activeDbConnectionId: string | null;
-  activeDbTable: string | null;
+  activeDbTable?: string | null;
+  activeDbTables?: string[];
 }): SourceType | null {
   if (project.sheetUrls.length > 0) return "sheet";
-  if (project.activeDbConnectionId && project.activeDbTable?.trim()) return "database";
+  if (project.activeDbConnectionId && resolveProjectDbTables(project).length > 0) return "database";
   return null;
 }

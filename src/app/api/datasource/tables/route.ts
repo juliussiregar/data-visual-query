@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { resolvePostgresConfig, listPostgresTables } from "@/lib/connectors/postgres";
+import { resolveSqlConfig, listSqlTables } from "@/lib/connectors/sql";
 import { AuthError, requireSessionUser } from "@/lib/session-server";
 
 export const dynamic = "force-dynamic";
@@ -9,9 +9,12 @@ export async function POST(request: NextRequest) {
     const user = await requireSessionUser(request);
 
     const body = await request.json();
-    const config = await resolvePostgresConfig(body, user.id);
-    const tables = await listPostgresTables(config);
-    return NextResponse.json({ tables, schema: config.schema ?? "public" });
+    const config = await resolveSqlConfig(body, user.id);
+    const tables = await listSqlTables(config);
+    return NextResponse.json({
+      tables,
+      schema: config.schema ?? (config.type === "mysql" ? config.database : "public"),
+    });
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

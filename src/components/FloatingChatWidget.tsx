@@ -99,7 +99,7 @@ export function FloatingChatWidget({
       {open && (
         <div
           className={cn(
-            "layer-chat fixed inset-0 bg-black/40 backdrop-blur-[2px]",
+            "layer-chat fixed inset-0 cursor-pointer bg-black/40 backdrop-blur-[2px]",
             chatSize === "fullscreen" ? "z-[115]" : "z-[105] sm:bg-black/25"
           )}
           onClick={() => setOpen(false)}

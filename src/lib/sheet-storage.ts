@@ -1,5 +1,7 @@
 /** Utilitas URL & label sheet — data sheet hanya disimpan per project, bukan global. */
 
+import { deriveDataSourceLabel } from "./data-source-labels";
+
 export interface SavedSheet {
   id: string;
   url: string;
@@ -15,8 +17,7 @@ function isBrowser() {
 }
 
 export function deriveSheetLabel(url: string, custom?: string): string {
-  if (custom?.trim()) return custom.trim();
-  return "Google Sheet";
+  return deriveDataSourceLabel(url, custom);
 }
 
 /** Label lama yang digenerate dari ID spreadsheet — boleh diganti judul asli. */

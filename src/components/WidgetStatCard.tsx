@@ -1,7 +1,6 @@
 "use client";
 
 import { Hash } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 interface WidgetStatCardProps {
   label: string;
@@ -10,30 +9,29 @@ interface WidgetStatCardProps {
 }
 
 export function WidgetStatCard({ label, value, compact = false }: WidgetStatCardProps) {
-  return (
-    <div
-      className={cn(
-        "surface-card flex flex-col items-center justify-center text-center",
-        compact ? "px-4 py-6" : "px-6 py-10"
-      )}
-    >
-      <div
-        className={cn(
-          "mb-3 flex items-center justify-center rounded-2xl bg-indigo-50",
-          compact ? "h-10 w-10" : "h-12 w-12"
-        )}
-      >
-        <Hash className={cn("text-indigo-500", compact ? "h-5 w-5" : "h-6 w-6")} />
+  if (compact) {
+    return (
+      <div className="surface-card px-5 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <p className="min-w-0 truncate text-xs font-medium text-slate-600">{label}</p>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50">
+            <Hash className="h-4 w-4 text-indigo-500" />
+          </div>
+        </div>
+        <p className="mt-2 truncate text-2xl font-bold leading-tight tracking-tight text-slate-900">
+          {value}
+        </p>
       </div>
-      <p
-        className={cn(
-          "font-bold tracking-tight text-slate-900",
-          compact ? "text-2xl" : "text-3xl sm:text-4xl"
-        )}
-      >
-        {value}
-      </p>
-      <p className={cn("mt-2 text-slate-500", compact ? "text-xs" : "text-sm")}>{label}</p>
+    );
+  }
+
+  return (
+    <div className="surface-card flex flex-col items-center justify-center px-6 py-10 text-center">
+      <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50">
+        <Hash className="h-6 w-6 text-indigo-500" />
+      </div>
+      <p className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">{value}</p>
+      <p className="mt-2 text-sm text-slate-500">{label}</p>
     </div>
   );
 }

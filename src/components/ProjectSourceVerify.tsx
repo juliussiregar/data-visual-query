@@ -11,6 +11,7 @@ import {
   projectHasSource,
   projectSourceType,
 } from "@/lib/project-source-probe";
+import { resolveProjectDbTables } from "@/lib/db-table-datasets";
 import { cn } from "@/lib/utils";
 
 interface ProjectSourceVerifyProps {
@@ -38,7 +39,9 @@ export function ProjectSourceVerify({
     project.id,
     project.sheetUrls.join("|"),
     project.activeDbConnectionId,
+    project.activeDbTables.join("|"),
     project.activeDbTable,
+    project.tableRelations?.map((r) => r.id).join("|") ?? "",
   ]);
 
   const handleProbe = async () => {
@@ -54,7 +57,21 @@ export function ProjectSourceVerify({
       if (!conn) {
         result = { ok: false, error: "Koneksi database tidak ditemukan. Hubungkan ulang di tab Sumber." };
       } else {
-        result = await probeDatabaseTable(conn, project.activeDbTable ?? "");
+        const tables = resolveProjectDbTables(project);
+        const probes = await Promise.all(
+          tables.map((table) => probeDatabaseTable(conn, table))
+        );
+        const failed = probes.find((probe) => !probe.ok);
+        result =
+          failed && !failed.ok
+            ? failed
+            : {
+                ok: true,
+                type: "database",
+                table: tables.join(", "),
+                previewRows: 0,
+                message: `${tables.length} tabel siap dimuat`,
+              };
       }
     }
 
@@ -76,7 +93,7 @@ export function ProjectSourceVerify({
 
       {!hasSource && (
         <p className="text-xs text-amber-700">
-          Tambahkan link Google Sheet atau hubungkan database PostgreSQL terlebih dahulu.
+          Tambahkan link Google Sheet atau hubungkan database SQL terlebih dahulu.
         </p>
       )}
 

@@ -209,13 +209,6 @@ export function LoginPage({ configured, onLogin, onRegister }: LoginPageProps) {
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               {mode === "login" ? "Masuk" : "Buat Akun"}
             </button>
-
-            {mode === "login" && (
-              <p className="text-center text-[11px] text-slate-400">
-                Demo: <span className="font-medium text-slate-500">admin</span> atau{" "}
-                <span className="font-medium text-slate-500">superadmin</span> / admin123
-              </p>
-            )}
           </form>
         </div>
       </div>

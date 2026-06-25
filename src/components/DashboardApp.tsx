@@ -78,6 +78,8 @@ import {
   type ReportScheduleInterval,
 } from "@/lib/report-schedule";
 import { fetchDbConnections, connectionToApiPayload } from "@/lib/datasource-storage";
+import { formatDatasetLabel, isRelationExecutable } from "@/lib/table-relations";
+import { resolveProjectDbTables } from "@/lib/db-table-datasets";
 import type { Project } from "@/lib/project-types";
 import {
   fetchProjects,
@@ -92,9 +94,8 @@ import {
   setActiveUserId,
 } from "@/lib/user-local-storage";
 import {
-  probeDatabaseTable,
-  probeSheetUrl,
   projectSourceType,
+  projectHasSource,
 } from "@/lib/project-source-probe";
 import { AppDialog } from "./AppDialog";
 import { ProjectSelector } from "./ProjectSelector";
@@ -120,6 +121,9 @@ export function DashboardApp() {
   const auth = useAuth();
 
   const [sheetData, setSheetData] = useState<SheetData | null>(null);
+  const [dbDatasets, setDbDatasets] = useState<Record<string, SheetData> | null>(null);
+  const [activeDbTables, setActiveDbTables] = useState<string[]>([]);
+  const [selectedDataTable, setSelectedDataTable] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<ViewId>("overview");
@@ -148,6 +152,25 @@ export function DashboardApp() {
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
   const activeProjectRef = useRef<Project | null>(null);
   activeProjectRef.current = activeProject;
+  const layoutRef = useRef<DashboardLayout | null>(null);
+  layoutRef.current = layout;
+  const selectedDataTableRef = useRef("");
+  selectedDataTableRef.current = selectedDataTable;
+
+  const resolveLayoutForReload = useCallback(
+    (project?: Project | null): DashboardLayout | null | undefined => {
+      const projectId = project?.id ?? activeProjectRef.current?.id;
+      if (
+        layoutRef.current &&
+        projectId &&
+        activeProjectRef.current?.id === projectId
+      ) {
+        return layoutRef.current;
+      }
+      return project?.layout ?? activeProjectRef.current?.layout ?? undefined;
+    },
+    []
+  );
 
   const userRole = auth.user?.role ?? "analyst";
   const userId = auth.user?.id ?? "";
@@ -156,12 +179,16 @@ export function DashboardApp() {
 
   const resetDashboardState = useCallback(() => {
     setSheetData(null);
+    setDbDatasets(null);
+    setActiveDbTables([]);
+    setSelectedDataTable("");
     setLoading(false);
     setError(null);
     setActiveView("overview");
     setFilters({});
     setLastUrl("");
     setSheetUrls([]);
+    layoutRef.current = null;
     setLayout(null);
     setSyncStatus("synced");
     setLinkCopied(false);
@@ -271,7 +298,7 @@ export function DashboardApp() {
         await initLayout(
           json,
           unique,
-          projectLayout ?? activeProjectRef.current?.layout ?? undefined
+          projectLayout ?? resolveLayoutForReload(activeProjectRef.current)
         );
       } catch (err) {
         setError(err instanceof Error ? err.message : "Terjadi kesalahan");
@@ -279,7 +306,7 @@ export function DashboardApp() {
         setLoading(false);
       }
     },
-    [initLayout, userRole, userId]
+    [initLayout, userRole, userId, resolveLayoutForReload]
   );
 
   const loadSheet = useCallback(
@@ -313,7 +340,7 @@ export function DashboardApp() {
           project.sheetUrls,
           project.mergeMode,
           false,
-          project.layout ?? undefined
+          resolveLayoutForReload(project)
         );
         setActiveView("overview");
       } else {
@@ -321,18 +348,7 @@ export function DashboardApp() {
       }
       setHeroCollapsed(true);
     },
-    [loadSheets, openProject]
-  );
-
-  const handleSelectProject = useCallback(
-    (project: Project) => {
-      setSheetData(null);
-      setLayout(null);
-      setFilters({});
-      openProject(project);
-      setActiveView("overview");
-    },
-    [openProject]
+    [loadSheets, openProject, resolveLayoutForReload]
   );
 
   const handleNewProject = useCallback(() => {
@@ -400,44 +416,128 @@ export function DashboardApp() {
 
   const joinModeActive = Boolean((sheetData as { joinMode?: boolean } | null)?.joinMode);
 
+  const fetchDatabaseProjectData = useCallback(async (project: Project) => {
+    const connections = await fetchDbConnections();
+    const conn = connections.find((c) => c.id === project.activeDbConnectionId);
+    if (!conn) {
+      throw new Error("Koneksi database tidak ditemukan. Tambahkan di tab Sumber.");
+    }
+    const tables = resolveProjectDbTables(project);
+    const payload = connectionToApiPayload(conn);
+    const endpoint =
+      tables.length === 1 ? "/api/datasource/load" : "/api/datasource/load-tables";
+    const body =
+      tables.length === 1
+        ? {
+            ...payload,
+            connectionName: conn.name,
+            table: tables[0],
+          }
+        : {
+            ...payload,
+            connectionName: conn.name,
+            tables,
+          };
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify(body),
+    });
+    const loaded = await res.json();
+    if (!res.ok) throw new Error(loaded.error || "Gagal memuat tabel");
+
+    const relations = (project.tableRelations ?? []).filter(isRelationExecutable);
+    if (relations.length > 0) {
+      const joinRes = await fetch("/api/datasource/load-joins", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          ...payload,
+          connectionName: conn.name,
+          relations,
+        }),
+      });
+      const joinLoaded = await joinRes.json();
+      if (!joinRes.ok) throw new Error(joinLoaded.error || "Gagal memuat join");
+      loaded.datasets = { ...(loaded.datasets ?? {}), ...(joinLoaded.datasets ?? {}) };
+      const joinAliases = (joinLoaded.relations as string[]) ?? [];
+      loaded.tables = [...(loaded.tables ?? tables), ...joinAliases];
+      loaded.sheetUrls = [...(loaded.sheetUrls ?? []), ...(joinLoaded.sourceUrls ?? [])];
+    }
+
+    return loaded as SheetData & {
+      sheetUrls?: string[];
+      datasets?: Record<string, SheetData>;
+      tables?: string[];
+      primaryTable?: string;
+    };
+  }, []);
+
   const loadFromDatabase = useCallback(
     async (
-      data: SheetData & { sheetUrls?: string[] },
-      projectLayout?: DashboardLayout | null
+      data: SheetData & {
+        sheetUrls?: string[];
+        datasets?: Record<string, SheetData>;
+        tables?: string[];
+        primaryTable?: string;
+      },
+      projectLayout?: DashboardLayout | null,
+      options?: { refresh?: boolean }
     ) => {
+      const isRefresh = options?.refresh ?? false;
       setLoading(true);
       setError(null);
+      const tableList =
+        data.tables ??
+        (data.primaryTable ? [data.primaryTable] : []);
+      const datasets = data.datasets ?? null;
       const urls =
         data.sheetUrls ??
         (data.dataset?.sourceUrl ? [data.dataset.sourceUrl] : ["postgresql://loaded"]);
       setLastUrl(urls[0]);
       setSheetUrls(urls);
-      setFilters({});
-      setDrillFilter(null);
-      setVisualQuery(EMPTY_VISUAL_QUERY);
-      setFunnelMetrics(null);
-      setDataScope(null);
+      setDbDatasets(datasets);
+      setActiveDbTables(tableList);
+      const keepTable = selectedDataTableRef.current;
+      if (isRefresh && keepTable && tableList.includes(keepTable)) {
+        setSelectedDataTable(keepTable);
+      } else {
+        setSelectedDataTable(tableList[0] ?? "");
+      }
+      if (!isRefresh) {
+        setFilters({});
+        setDrillFilter(null);
+        setVisualQuery(EMPTY_VISUAL_QUERY);
+        setFunnelMetrics(null);
+        setDataScope(null);
+      }
 
       try {
         setSheetData(data);
-        setSavedMetrics([]);
-        setFunnelMetrics(null);
+        if (!isRefresh) {
+          setSavedMetrics([]);
+          setFunnelMetrics(null);
+        }
         logAuditClient(
           "sheet_load",
           `DB: ${data.dataset?.name ?? "PostgreSQL"}`,
           { rows: data.rows?.length },
           userRole
         );
-        setActiveView("overview");
-        setHeroCollapsed(true);
-        await initLayout(data, urls, projectLayout);
+        if (!isRefresh) {
+          setActiveView("overview");
+          setHeroCollapsed(true);
+        }
+        await initLayout(data, urls, projectLayout ?? resolveLayoutForReload(activeProjectRef.current));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Terjadi kesalahan");
       } finally {
         setLoading(false);
       }
     },
-    [initLayout, userRole]
+    [initLayout, userRole, resolveLayoutForReload]
   );
 
   const loadProject = useCallback(
@@ -448,26 +548,11 @@ export function DashboardApp() {
         return;
       }
 
-      if (project.activeDbConnectionId && project.activeDbTable?.trim()) {
+      if (project.activeDbConnectionId && resolveProjectDbTables(project).length > 0) {
         setError(null);
         try {
-          const connections = await fetchDbConnections();
-          const conn = connections.find((c) => c.id === project.activeDbConnectionId);
-          if (!conn) {
-            throw new Error("Koneksi database tidak ditemukan. Tambahkan di tab Sumber.");
-          }
-          const res = await fetch("/api/datasource/load", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              ...connectionToApiPayload(conn, { table: project.activeDbTable!.trim() }),
-              connectionName: conn.name,
-              table: project.activeDbTable!.trim(),
-            }),
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || "Gagal memuat tabel");
-          await loadFromDatabase(data, project.layout ?? undefined);
+          const loaded = await fetchDatabaseProjectData(project);
+          await loadFromDatabase(loaded, resolveLayoutForReload(project));
         } catch (err) {
           setError(err instanceof Error ? err.message : "Gagal memuat database");
           setActiveView("overview");
@@ -477,50 +562,32 @@ export function DashboardApp() {
 
       setActiveView("overview");
     },
-    [loadProjectSheets, loadFromDatabase, openProject]
+    [loadProjectSheets, loadFromDatabase, openProject, resolveLayoutForReload, fetchDatabaseProjectData]
+  );
+
+  const handleSelectProject = useCallback(
+    (project: Project) => {
+      setSheetData(null);
+      setDbDatasets(null);
+      setActiveDbTables([]);
+      setSelectedDataTable("");
+      layoutRef.current = null;
+      setLayout(null);
+      setFilters({});
+      setError(null);
+      openProject(project);
+      setActiveView("overview");
+      if (projectHasSource(project)) {
+        setLoadingMessage("Memuat data…");
+        void loadProject(project).finally(() => setLoadingMessage(null));
+      }
+    },
+    [openProject, loadProject]
   );
 
   const handleLoadActiveProject = useCallback(() => {
     if (!activeProject) return;
     void loadProject(activeProject);
-  }, [activeProject, loadProject]);
-
-  const handleVerifyAndLoad = useCallback(async () => {
-    if (!activeProject) return;
-    const sourceType = projectSourceType(activeProject);
-    if (!sourceType) {
-      setShowSettingsDialog(true);
-      return;
-    }
-
-    setLoadingMessage("Memeriksa koneksi…");
-    setError(null);
-
-    let ok = false;
-    if (sourceType === "sheet") {
-      const result = await probeSheetUrl(activeProject.sheetUrls[0]);
-      ok = result.ok;
-      if (!result.ok) setError(result.error);
-    } else {
-      const connections = await fetchDbConnections();
-      const conn = connections.find((c) => c.id === activeProject.activeDbConnectionId);
-      if (!conn) {
-        setError("Koneksi database tidak ditemukan");
-      } else {
-        const result = await probeDatabaseTable(conn, activeProject.activeDbTable ?? "");
-        ok = result.ok;
-        if (!result.ok) setError(result.error);
-      }
-    }
-
-    if (!ok) {
-      setLoadingMessage(null);
-      return;
-    }
-
-    setLoadingMessage("Memuat data…");
-    await loadProject(activeProject);
-    setLoadingMessage(null);
   }, [activeProject, loadProject]);
 
   const handleProjectCreated = useCallback(
@@ -537,15 +604,178 @@ export function DashboardApp() {
     [loadProject, refreshProjects]
   );
 
-  const silentReload = useCallback(() => {
-    const urls = sheetUrls.length ? sheetUrls : lastUrl ? [lastUrl] : [];
-    if (urls.length) return loadSheets(urls, layout?.mergeMode ?? false, true);
-  }, [sheetUrls, lastUrl, layout?.mergeMode, loadSheets]);
+  const handleProjectDeleted = useCallback(
+    (projectId: string) => {
+      setShowSettingsDialog(false);
+      const remaining = projects.filter((p) => p.id !== projectId);
+      setProjects(remaining);
+
+      if (activeProject?.id !== projectId) return;
+
+      const next = remaining[0] ?? null;
+      setActiveProject(next);
+      setSheetData(null);
+      setDbDatasets(null);
+      setActiveDbTables([]);
+      setSelectedDataTable("");
+      layoutRef.current = null;
+      setLayout(null);
+      setFilters({});
+      setError(null);
+
+      if (next) {
+        syncProjectToUrl(next.id);
+        setLoadingMessage("Memuat data…");
+        void loadProject(next).finally(() => setLoadingMessage(null));
+      } else {
+        syncProjectToUrl(null);
+        setActiveView("overview");
+      }
+    },
+    [activeProject?.id, loadProject, projects]
+  );
+
+  const reloadProjectData = useCallback(
+    async (project: Project, successMessage?: string) => {
+      setSheetData(null);
+      setDbDatasets(null);
+      setActiveDbTables([]);
+      setSelectedDataTable("");
+      layoutRef.current = null;
+      setLayout(null);
+      setFilters({});
+      setError(null);
+      openProject(project);
+
+      if (!projectHasSource(project)) return;
+
+      setLoadingMessage("Memuat data…");
+      try {
+        if (project.sheetUrls.length > 0) {
+          await loadSheets(
+            project.sheetUrls,
+            project.mergeMode,
+            false,
+            resolveLayoutForReload(project)
+          );
+        } else if (
+          project.activeDbConnectionId &&
+          resolveProjectDbTables(project).length > 0
+        ) {
+          const loaded = await fetchDatabaseProjectData(project);
+          await loadFromDatabase(loaded, resolveLayoutForReload(project));
+        }
+        if (successMessage) toast(successMessage);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Gagal memuat data";
+        setError(message);
+        toast(
+          successMessage
+            ? "Pengaturan disimpan, tetapi gagal memuat data"
+            : "Gagal memuat data",
+          "error"
+        );
+      } finally {
+        setLoadingMessage(null);
+      }
+    },
+    [
+      fetchDatabaseProjectData,
+      loadFromDatabase,
+      loadSheets,
+      openProject,
+      resolveLayoutForReload,
+      toast,
+    ]
+  );
+
+  const handleProjectSettingsSaved = useCallback(
+    async (project: Project) => {
+      setActiveProject(project);
+      setProjects((prev) => prev.map((x) => (x.id === project.id ? project : x)));
+      setShowSettingsDialog(false);
+
+      if (!projectHasSource(project)) {
+        toast("Pengaturan project disimpan");
+        return;
+      }
+
+      await reloadProjectData(project, "Pengaturan disimpan & data dimuat ulang");
+    },
+    [reloadProjectData, toast]
+  );
+
+  const handleProjectReload = useCallback(
+    async (project: Project) => {
+      setShowSettingsDialog(false);
+      await reloadProjectData(project, "Data dimuat ulang");
+    },
+    [reloadProjectData]
+  );
+
+  const { flushSave } = useLayoutAutoSave(
+    layout,
+    Boolean(layout),
+    setSyncStatus,
+    activeProject?.id
+  );
+
+  const handleSaveLayout = useCallback((next: DashboardLayout) => {
+    setLayout(next);
+    layoutRef.current = next;
+    setActiveProject((prev) => (prev ? { ...prev, layout: next } : prev));
+  }, []);
+
+  const handleRefreshData = useCallback(async () => {
+    const project = activeProjectRef.current;
+    await flushSave();
+
+    if (project && projectSourceType(project) === "database") {
+      setLoading(true);
+      setError(null);
+      try {
+        const loaded = await fetchDatabaseProjectData(project);
+        await loadFromDatabase(loaded, resolveLayoutForReload(project), { refresh: true });
+        const datasets = loaded.datasets ?? {};
+        const parts = Object.entries(datasets).map(
+          ([table, ds]) => `${table}: ${(ds.rows?.length ?? 0).toLocaleString("id-ID")}`
+        );
+        toast(
+          parts.length
+            ? `Data diperbarui · ${parts.join(" · ")}`
+            : `Data diperbarui · ${(loaded.rows?.length ?? 0).toLocaleString("id-ID")} baris`,
+          "info"
+        );
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Gagal memuat database");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    void loadSheets(
+      sheetUrls.length ? sheetUrls : [lastUrl],
+      layout?.mergeMode ?? sheetUrls.length > 1,
+      true,
+      resolveLayoutForReload(project)
+    );
+  }, [
+    flushSave,
+    fetchDatabaseProjectData,
+    lastUrl,
+    layout?.mergeMode,
+    loadFromDatabase,
+    loadSheets,
+    resolveLayoutForReload,
+    sheetUrls,
+    toast,
+  ]);
 
   const { lastRefreshAt, refreshing, runRefresh } = useAutoRefresh(
     Boolean(sheetData),
     autoRefreshMinutes,
-    silentReload
+    handleRefreshData
   );
 
   const handleAutoRefreshChange = (minutes: AutoRefreshInterval) => {
@@ -557,13 +787,6 @@ export function DashboardApp() {
     setReportScheduleMinutes(minutes);
     if (userId) saveReportScheduleMinutes(userId, minutes);
   };
-
-  const { flushSave } = useLayoutAutoSave(
-    layout,
-    Boolean(layout),
-    setSyncStatus,
-    activeProject?.id
-  );
 
   const handleCopyLink = useCallback(async () => {
     await flushSave();
@@ -590,6 +813,10 @@ export function DashboardApp() {
           openProject(project);
           setActiveView("overview");
           setHeroCollapsed(true);
+          if (projectHasSource(project)) {
+            setLoadingMessage("Memuat data…");
+            void loadProject(project).finally(() => setLoadingMessage(null));
+          }
           return;
         }
         syncProjectToUrl(null);
@@ -600,13 +827,26 @@ export function DashboardApp() {
       if (list.length === 0) {
         setShowCreateDialog(true);
       } else {
-        openProject(list[0]);
+        const first = list[0];
+        openProject(first);
+        if (projectHasSource(first)) {
+          setLoadingMessage("Memuat data…");
+          void loadProject(first).finally(() => setLoadingMessage(null));
+        }
       }
     };
     void boot();
-  }, [auth.user, searchParams, openProject, refreshProjects]);
+  }, [auth.user, searchParams, openProject, refreshProjects, loadProject]);
 
-  const scopedBase = sheetData;
+  const exploredData = useMemo(() => {
+    if (!sheetData) return null;
+    if (selectedDataTable && dbDatasets?.[selectedDataTable]) {
+      return dbDatasets[selectedDataTable];
+    }
+    return sheetData;
+  }, [sheetData, dbDatasets, selectedDataTable]);
+
+  const scopedBase = exploredData;
 
   const queryFilteredBase = useMemo(() => {
     if (!scopedBase) return null;
@@ -845,9 +1085,9 @@ export function DashboardApp() {
       project={activeProject}
       loading={Boolean(loadingMessage || (loading && !sheetData))}
       loadingMessage={loadingMessage ?? undefined}
+      error={error}
       onCreateProject={() => setShowCreateDialog(true)}
       onOpenSettings={() => setShowSettingsDialog(true)}
-      onVerifyAndLoad={() => void handleVerifyAndLoad()}
     />
   );
 
@@ -878,13 +1118,16 @@ export function DashboardApp() {
         return (
           <OverviewDashboard
             data={sheetData}
+            dbDatasets={dbDatasets}
+            activeDbTables={activeDbTables}
+            tableRelations={activeProject?.tableRelations}
             layout={layout}
             sheetUrls={sheetUrls}
             syncStatus={syncStatus}
             linkCopied={linkCopied}
             onBuilderOpenChange={setOverviewBuilderOpen}
-            onSaveLayout={setLayout}
-            onSaveNow={() => void flushSave()}
+            onSaveLayout={handleSaveLayout}
+            onSaveNow={(override) => void flushSave(override)}
             onResetLayout={() => {
               if (sheetData) {
                 const next = createDefaultLayout(sheetUrls);
@@ -922,6 +1165,9 @@ export function DashboardApp() {
         return (
           <DataViewPanel
             sheetData={viewData}
+            availableTables={activeDbTables}
+            selectedTable={selectedDataTable}
+            onSelectTable={setSelectedDataTable}
             maskPII={perms.maskPII}
             canExport={perms.canExport}
             savedMetrics={savedMetrics}
@@ -1023,11 +1269,43 @@ export function DashboardApp() {
                 onSelect={(p) => handleSelectProject(p)}
                 onCreate={handleNewProject}
                 onSettings={() => setShowSettingsDialog(true)}
+                onDeleted={handleProjectDeleted}
               />
               {inDataDashboard && (
                 <p className="hidden truncate text-[11px] text-slate-500 md:block">
-                  {displayData?.rows.length.toLocaleString("id-ID")} baris
-                  {sheetData?.dataset?.name ? ` · ${sheetData.dataset.name}` : ""}
+                  {activeDbTables.length > 1 ? (
+                    <>
+                      <span title="Mengganti tabel yang ditampilkan di tab Data, Charts, dan Insights">
+                        Tabel aktif:
+                      </span>{" "}
+                      <select
+                        value={selectedDataTable}
+                        onChange={(e) => {
+                          setSelectedDataTable(e.target.value);
+                          if (activeView === "overview") {
+                            setActiveView("data");
+                          }
+                        }}
+                        className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-600"
+                        aria-label="Pilih tabel untuk tab Data"
+                      >
+                        {activeDbTables.map((table) => (
+                          <option key={table} value={table}>
+                            {formatDatasetLabel(table, activeProject?.tableRelations)}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-slate-400">
+                        {" "}
+                        · {displayData?.rows.length.toLocaleString("id-ID")} baris
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      {displayData?.rows.length.toLocaleString("id-ID")} baris
+                      {sheetData?.dataset?.name ? ` · ${sheetData.dataset.name}` : ""}
+                    </>
+                  )}
                 </p>
               )}
             </div>
@@ -1046,39 +1324,47 @@ export function DashboardApp() {
                     projectSheetUrls={activeProject?.sheetUrls ?? sheetUrls}
                     projectId={activeProject?.id ?? null}
                     sheetLabels={(sheetData as { sheetLabels?: Record<string, string> } | null)?.sheetLabels}
+                    sourceKind={
+                      activeProject && projectSourceType(activeProject) === "database"
+                        ? "database"
+                        : "sheet"
+                    }
+                    activeDbTables={activeDbTables}
+                    selectedTable={selectedDataTable}
                     mergeMode={layout?.mergeMode ?? sheetUrls.length > 1}
                     joinMode={joinModeActive}
                     loading={loading}
                     onSwitchSheet={handleSwitchSheet}
+                    onSelectTable={(table) => {
+                      setSelectedDataTable(table);
+                      setActiveView("data");
+                    }}
                     onAddSheet={handleAddSheetToMerge}
                     onRemoveSheet={handleRemoveSheetFromMerge}
                     onToggleMerge={handleToggleMergeMode}
-                    onReload={handleReloadMerged}
+                    onReload={() => void handleRefreshData()}
                     onOpenSettings={() => setShowSettingsDialog(true)}
                   />
                   <button
-                    onClick={() =>
-                      void loadSheets(
-                        sheetUrls.length ? sheetUrls : [lastUrl],
-                        layout?.mergeMode ?? sheetUrls.length > 1,
-                        true
-                      )
-                    }
+                    onClick={() => void handleRefreshData()}
                     disabled={loading}
                     className="btn-ghost disabled:opacity-50"
                   >
                     <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
                     <span className="hidden sm:inline">Refresh</span>
                   </button>
-                  <a
-                    href={sheetData.sourceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-ghost"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Sheet</span>
-                  </a>
+                  {(!activeProject || projectSourceType(activeProject) === "sheet") &&
+                    sheetData.sourceUrl.startsWith("http") && (
+                    <a
+                      href={sheetData.sourceUrl.split(" | ")[0]?.trim() ?? sheetData.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-ghost"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Sheet</span>
+                    </a>
+                  )}
                 </>
               )}
             </div>
@@ -1113,7 +1399,7 @@ export function DashboardApp() {
           {mobileNav && (
             <div className="fixed inset-0 z-50 lg:hidden">
               <div
-                className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
+                className="absolute inset-0 cursor-pointer bg-slate-900/20 backdrop-blur-sm"
                 onClick={() => setMobileNav(false)}
               />
               <Sidebar
@@ -1254,19 +1540,16 @@ export function DashboardApp() {
         <AppDialog
           open={showSettingsDialog}
           onClose={() => setShowSettingsDialog(false)}
-          title="Atur sumber data"
-          description={activeProject.name}
+          title="Pengaturan project"
+          description="Ubah nama, sumber data, dan relasi tabel"
           size="lg"
         >
           <ProjectSettingsDialogContent
             project={activeProject}
-            onUpdated={(p) => {
-              setActiveProject(p);
-              setProjects((prev) => prev.map((x) => (x.id === p.id ? p : x)));
-            }}
+            onUpdated={(p) => void handleProjectSettingsSaved(p)}
+            onDeleted={handleProjectDeleted}
             onLoad={() => {
-              setShowSettingsDialog(false);
-              void handleVerifyAndLoad();
+              void handleProjectReload(activeProject);
             }}
             loading={loading}
           />

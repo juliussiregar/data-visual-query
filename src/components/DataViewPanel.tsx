@@ -15,6 +15,9 @@ type DataTab = "table" | "columns" | "insights";
 
 interface DataViewPanelProps {
   sheetData: SheetData;
+  availableTables?: string[];
+  selectedTable?: string;
+  onSelectTable?: (table: string) => void;
   maskPII: boolean;
   canExport: boolean;
   savedMetrics: SavedMetric[];
@@ -32,6 +35,9 @@ const TABS: { id: DataTab; label: string; icon: typeof Table2 }[] = [
 
 export function DataViewPanel({
   sheetData,
+  availableTables = [],
+  selectedTable,
+  onSelectTable,
   maskPII,
   canExport,
   savedMetrics,
@@ -49,7 +55,21 @@ export function DataViewPanel({
           <h2 className="text-lg font-semibold text-slate-900">Data</h2>
           <p className="mt-1 text-sm text-slate-500">
             {sheetData.rows.length.toLocaleString()} rows · {sheetData.columns.length} columns
+            {availableTables.length > 1 && selectedTable ? ` · ${selectedTable}` : ""}
           </p>
+          {availableTables.length > 1 && onSelectTable && (
+            <select
+              value={selectedTable ?? availableTables[0]}
+              onChange={(e) => onSelectTable(e.target.value)}
+              className="mt-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700"
+            >
+              {availableTables.map((table) => (
+                <option key={table} value={table}>
+                  {table}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 

@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined };
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 function buildDatabaseUrl(): string | undefined {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
@@ -35,4 +35,12 @@ export function getPrisma(): PrismaClient {
     globalForPrisma.prisma = createPrismaClient();
   }
   return globalForPrisma.prisma;
+}
+
+/** Dipakai saat Prisma client di memory sudah usang setelah `prisma generate`. */
+export function resetPrismaClient(): void {
+  if (globalForPrisma.prisma) {
+    void globalForPrisma.prisma.$disconnect();
+    globalForPrisma.prisma = undefined;
+  }
 }

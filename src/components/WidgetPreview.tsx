@@ -13,6 +13,7 @@ import { WidgetStatCard } from "./WidgetStatCard";
 import { StatusDistribution } from "./StatusDistribution";
 import { TopRecords } from "./TopRecords";
 import { DataTable } from "./DataTable";
+import { resolveTablePanelHeight } from "@/lib/table-panel";
 import { Eye } from "lucide-react";
 
 interface WidgetPreviewProps {
@@ -33,7 +34,7 @@ export function WidgetPreview({ data, widget }: WidgetPreviewProps) {
     if (widget.visualShape === "stat") {
       const stat = buildStatFromWidget(data, widget);
       if (!stat) return empty;
-      return <WidgetStatCard label={stat.label} value={stat.value} />;
+      return <WidgetStatCard label={stat.label} value={stat.value} compact />;
     }
 
     if (widget.visualShape === "distribution") {
@@ -52,16 +53,29 @@ export function WidgetPreview({ data, widget }: WidgetPreviewProps) {
       const table = buildTableFromWidget(data, widget);
       if (!table.rows.length) return empty;
       return (
-        <DataTable
-          rows={table.rows}
-          columns={table.columns}
-          canExport={false}
-          compact
-          fitContainer
-          maxColumns={0}
-          paginationMode="off"
-          summaryRow={table.summaryRow}
-        />
+        <div
+          className="overflow-auto rounded-lg border border-slate-100"
+          style={{
+            height: Math.min(
+              resolveTablePanelHeight(widget, {
+                rowCount: table.totalRows,
+                hasSummaryRow: Boolean(table.summaryRow),
+              }),
+              360
+            ),
+          }}
+        >
+          <DataTable
+            rows={table.rows}
+            columns={table.columns}
+            canExport={false}
+            compact
+            fitContainer
+            maxColumns={0}
+            paginationMode="off"
+            summaryRow={table.summaryRow}
+          />
+        </div>
       );
     }
 

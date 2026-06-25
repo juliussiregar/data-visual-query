@@ -59,6 +59,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (body.activeDbTable === null || typeof body.activeDbTable === "string") {
       input.activeDbTable = body.activeDbTable;
     }
+    if (Array.isArray(body.activeDbTables)) {
+      input.activeDbTables = body.activeDbTables.filter(
+        (t: unknown): t is string => typeof t === "string" && t.trim() !== ""
+      );
+    }
+    if (Array.isArray(body.tableRelations)) {
+      input.tableRelations = body.tableRelations;
+    }
     if (body.layout === null) {
       input.layout = null;
     } else if (body.layout && (body.layout as DashboardLayout).version === 1) {
@@ -81,7 +89,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
-    return NextResponse.json({ error: "Gagal memperbarui project" }, { status: 500 });
+    console.error("[PATCH /api/user/projects]", error);
+    const message =
+      error instanceof Error ? error.message : "Gagal memperbarui project";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 

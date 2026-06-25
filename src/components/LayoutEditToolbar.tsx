@@ -23,6 +23,10 @@ export function LayoutEditToolbar({
       <p className="text-xs text-slate-500">
         <span className="font-medium text-slate-600">{widgetCount}</span> widget
         {widgetCount !== 1 ? "s" : ""} on this overview
+        <span className="hidden text-slate-400 sm:inline">
+          {" · "}
+          drag grip to reorder · KPI cards fill each row (1–4)
+        </span>
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <button

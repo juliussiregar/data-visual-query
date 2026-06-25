@@ -56,7 +56,7 @@ export interface DataQualityReport {
 
 export interface DatasetMeta {
   name: string;
-  sourceType: "google_sheets" | "merged" | "postgresql" | "unknown";
+  sourceType: "google_sheets" | "merged" | "postgresql" | "mysql" | "unknown";
   sourceUrl: string;
   schemaId: DatasetSchemaId;
   fetchedAt: string;
@@ -316,6 +316,10 @@ export interface WidgetConfig {
   span?: 1 | 2 | 3;
   /** Preferred width on the overview dashboard */
   layoutWidth?: "full" | "half";
+  /** Table widget: preset scroll area height */
+  tablePanelHeight?: "sm" | "md" | "lg" | "xl";
+  /** Table widget: custom height in px (from drag resize); overrides preset */
+  tablePanelHeightPx?: number;
   chartId?: string;
   chartType?: ChartType;
   categoryKey?: string;
@@ -324,6 +328,8 @@ export interface WidgetConfig {
   title?: string;
   /** Bentuk visual yang dipilih user (builder langkah 1) */
   visualShape?: WidgetVisualShape;
+  /** PostgreSQL table for this widget when project has multiple tables */
+  sourceTable?: string;
   /** Konfigurasi data: filter, group by, agregasi */
   dataQuery?: WidgetDataQuery;
 }
@@ -406,7 +412,7 @@ export interface DataScope {
   values: string[];
 }
 
-export type DatabaseType = "postgresql";
+export type DatabaseType = "postgresql" | "mysql";
 
 export interface DatabaseConnectionProfile {
   id: string;

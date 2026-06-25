@@ -48,17 +48,28 @@ export function buildOverviewRows(widgets: WidgetConfig[]): OverviewRow[] {
     }
 
     const { batch, nextIndex } = collectHalfWidthRun(visible, i);
-    if (batch.length >= 2) {
-      rows.push({
-        kind: "grid",
-        widgets: batch,
-        statRow: batch[0].visualShape === "stat",
-      });
-    } else {
-      rows.push({ kind: "full", widgets: [batch[0]] });
-    }
+    rows.push({
+      kind: "grid",
+      widgets: batch,
+      statRow: batch[0].visualShape === "stat",
+    });
     i = nextIndex;
   }
 
   return rows;
+}
+
+/** Responsive grid columns for a row of KPI / stat cards (1–4 items fill the row). */
+export function overviewStatRowColumns(count: number, compact = false): string {
+  const n = Math.min(Math.max(count, 1), 4);
+  if (compact) {
+    if (n === 1) return "grid-cols-1";
+    if (n === 2) return "grid-cols-2";
+    if (n === 3) return "grid-cols-3";
+    return "grid-cols-4";
+  }
+  if (n === 1) return "grid-cols-1";
+  if (n === 2) return "grid-cols-1 sm:grid-cols-2";
+  if (n === 3) return "grid-cols-1 sm:grid-cols-3";
+  return "grid-cols-1 sm:grid-cols-2 xl:grid-cols-4";
 }

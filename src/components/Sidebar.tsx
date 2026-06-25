@@ -96,7 +96,7 @@ export function Sidebar({
 
         {!hasData && (
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] leading-relaxed text-slate-600">
-            Select a project above, then load data to unlock analysis menus.
+            Select a project above. Data loads automatically when a source is configured.
           </div>
         )}
       </nav>
