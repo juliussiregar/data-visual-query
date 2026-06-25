@@ -18,7 +18,7 @@ export function DataSourcePanel({
     <div className="space-y-10">
       <SectionHeader
         title="Sumber Data"
-        description="Hubungkan Google Sheet atau PostgreSQL, lalu muat ke dashboard untuk KPI & grafik otomatis."
+        description="Hubungkan Google Sheet atau database SQL (PostgreSQL/MySQL), lalu muat ke dashboard untuk KPI & grafik otomatis."
       />
 
       <section className="space-y-3">

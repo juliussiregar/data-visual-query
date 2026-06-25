@@ -51,6 +51,7 @@ model UserDbConnection {
   id                String    @id @default(uuid()) @db.Uuid
   userId            String    @map("user_id") @db.Uuid
   name              String
+  dbType            String    @default("postgresql") @map("db_type")
   host              String
   port              Int       @default(5432)
   databaseName      String    @map("database_name")
@@ -107,6 +108,8 @@ model Project {
   dbConnectionIds      Json     @default("[]") @map("db_connection_ids")
   activeDbConnectionId String?  @map("active_db_connection_id") @db.Uuid
   activeDbTable        String?  @map("active_db_table")
+  activeDbTables       Json     @default("[]") @map("active_db_tables")
+  tableRelations       Json     @default("[]") @map("table_relations")
   layoutJson           Json?    @map("layout_json")
   lastOpenedAt         DateTime @default(now()) @map("last_opened_at")
   createdAt            DateTime @default(now()) @map("created_at")

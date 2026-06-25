@@ -12,8 +12,14 @@ function shortSheetLabel(sourceUrl: string): string {
   }
   if (sourceUrl.includes("⨝")) return "Multi-sheet join";
   if (sourceUrl.includes("|")) return "Multi-sheet";
+  if (sourceUrl.startsWith("postgres://") || sourceUrl.startsWith("postgresql://")) {
+    return "PostgreSQL";
+  }
+  if (sourceUrl.startsWith("mysql://") || sourceUrl.startsWith("mariadb://")) {
+    return "MySQL";
+  }
   if (sourceUrl.includes("/spreadsheets/")) return "Google Sheet";
-  return "Google Sheet";
+  return "Sumber data";
 }
 
 export function attachColumnLineage(

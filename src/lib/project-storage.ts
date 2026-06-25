@@ -63,10 +63,15 @@ export async function createProject(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, description, ...initial }),
     });
-    if (!res.ok) return null;
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(
+        typeof json.error === "string" ? json.error : "Gagal menyimpan project"
+      );
+    }
     return json.project ?? null;
-  } catch {
+  } catch (error) {
+    if (error instanceof Error) throw error;
     return null;
   }
 }
@@ -78,10 +83,15 @@ export async function updateProject(id: string, patch: ProjectPatch): Promise<Pr
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
-    if (!res.ok) return null;
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(
+        typeof json.error === "string" ? json.error : "Gagal menyimpan project"
+      );
+    }
     return json.project ?? null;
-  } catch {
+  } catch (error) {
+    if (error instanceof Error) throw error;
     return null;
   }
 }

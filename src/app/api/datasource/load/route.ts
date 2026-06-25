@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeSheetData } from "@/lib/analyzer";
 import {
-  resolvePostgresConfig,
-  loadPostgresTable,
-  postgresSourceLabel,
-} from "@/lib/connectors/postgres";
+  resolveSqlConfig,
+  loadSqlTable,
+  sqlSourceLabel,
+  databaseTypeLabel,
+  datasetSourceType,
+} from "@/lib/connectors/sql";
 import { appendAuditEvent } from "@/lib/audit-log";
 import { AuthError, requireSessionUser } from "@/lib/session-server";
 
@@ -22,17 +24,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "table wajib diisi" }, { status: 400 });
     }
 
-    const config = await resolvePostgresConfig(body, user.id);
-    const rows = await loadPostgresTable(config, table, MAX_LOAD_ROWS);
-    const sourceUrl = `${postgresSourceLabel(config)}#${table}`;
+    const config = await resolveSqlConfig(body, user.id);
+    const rows = await loadSqlTable(config, table, MAX_LOAD_ROWS);
+    const sourceUrl = `${sqlSourceLabel(config)}#${table}`;
     const data = analyzeSheetData(rows, sourceUrl, undefined, {
       mergeMode: false,
       joinMode: false,
     });
 
+    const dbLabel = databaseTypeLabel(config.type);
     if (data.dataset) {
-      data.dataset.sourceType = "postgresql";
-      data.dataset.name = `${String(connectionName ?? table)} (PostgreSQL)`;
+      data.dataset.sourceType = datasetSourceType(config.type);
+      data.dataset.name = `${String(connectionName ?? table)} (${dbLabel})`;
     }
 
     await appendAuditEvent(

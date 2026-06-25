@@ -1,5 +1,5 @@
 import type { WidgetType, WidgetVisualShape, WidgetConfig } from "@/lib/types";
-import { buildOverviewRows } from "@/lib/overview-layout";
+import { buildOverviewRows, overviewStatRowColumns } from "@/lib/overview-layout";
 import { cn } from "@/lib/utils";
 
 interface WidgetSilhouetteProps {
@@ -288,7 +288,9 @@ export function LayoutSilhouettePreview({
             key={`grid-${idx}`}
             className={cn(
               "grid gap-1.5",
-              row.statRow ? "grid-cols-3" : "grid-cols-2"
+              row.statRow
+                ? overviewStatRowColumns(row.widgets.length, true)
+                : "grid-cols-2"
             )}
           >
             {row.widgets.map((w) =>

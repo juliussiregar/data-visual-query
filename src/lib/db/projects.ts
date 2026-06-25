@@ -1,6 +1,12 @@
-import { getPrisma } from "@/lib/db/prisma";
+import { getPrisma, resetPrismaClient } from "@/lib/db/prisma";
 import type { DashboardLayout } from "@/lib/types";
 import type { Project } from "@/lib/project-types";
+import {
+  normalizeActiveDbTables,
+  syncLegacyActiveDbTable,
+} from "@/lib/db-table-datasets";
+import { normalizeTableRelations } from "@/lib/table-relations";
+import type { TableRelation } from "@/lib/sql-query-types";
 import type { Prisma } from "@prisma/client";
 import { Prisma as PrismaRuntime } from "@prisma/client";
 
@@ -53,6 +59,8 @@ function toProject(row: {
   dbConnectionIds: unknown;
   activeDbConnectionId: string | null;
   activeDbTable: string | null;
+  activeDbTables: unknown;
+  tableRelations: unknown;
   layoutJson: unknown;
   lastOpenedAt: Date;
   createdAt: Date;
@@ -67,6 +75,8 @@ function toProject(row: {
     dbConnectionIds: parseStringArray(row.dbConnectionIds),
     activeDbConnectionId: row.activeDbConnectionId,
     activeDbTable: row.activeDbTable,
+    activeDbTables: parseStringArray(row.activeDbTables),
+    tableRelations: normalizeTableRelations(row.tableRelations),
     layout: (row.layoutJson as DashboardLayout | null) ?? null,
     lastOpenedAt: row.lastOpenedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
@@ -97,8 +107,48 @@ export interface ProjectUpsertInput {
   dbConnectionIds?: string[];
   activeDbConnectionId?: string | null;
   activeDbTable?: string | null;
+  activeDbTables?: string[];
+  tableRelations?: TableRelation[];
   layout?: DashboardLayout | null;
   touchOpened?: boolean;
+}
+
+function isUnknownPrismaFieldError(error: unknown, field: string): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.includes(`Unknown argument \`${field}\``) ||
+    error.message.includes(`Unknown arg \`${field}\``)
+  );
+}
+
+async function createProjectRow(data: Prisma.ProjectCreateInput) {
+  const prisma = getPrisma();
+  try {
+    return await prisma.project.create({ data });
+  } catch (error) {
+    if (!isUnknownPrismaFieldError(error, "tableRelations")) throw error;
+    resetPrismaClient();
+    const { tableRelations: _removed, ...rest } = data;
+    console.warn(
+      "[projects] Prisma client usang — simpan tanpa tableRelations. Jalankan ulang `npm run dev` setelah migration."
+    );
+    return await getPrisma().project.create({ data: rest });
+  }
+}
+
+async function updateProjectRow(projectId: string, data: Prisma.ProjectUpdateInput) {
+  const prisma = getPrisma();
+  try {
+    return await prisma.project.update({ where: { id: projectId }, data });
+  } catch (error) {
+    if (!isUnknownPrismaFieldError(error, "tableRelations")) throw error;
+    resetPrismaClient();
+    const { tableRelations: _removed, ...rest } = data;
+    console.warn(
+      "[projects] Prisma client usang — update tanpa tableRelations. Jalankan ulang `npm run dev` setelah migration."
+    );
+    return await getPrisma().project.update({ where: { id: projectId }, data: rest });
+  }
 }
 
 export async function createUserProject(
@@ -107,26 +157,38 @@ export async function createUserProject(
   description?: string | null,
   initial?: Omit<ProjectUpsertInput, "name" | "description" | "touchOpened">
 ): Promise<Project> {
-  const row = await getPrisma().project.create({
-    data: {
-      userId,
-      name: name.trim() || "Project Baru",
-      description: description?.trim() || null,
-      sheetUrls: initial?.sheetUrls ?? [],
-      mergeMode: initial?.mergeMode ?? false,
-      dbConnectionIds: initial?.dbConnectionIds ?? [],
-      activeDbConnectionId: initial?.activeDbConnectionId ?? null,
-      activeDbTable: initial?.activeDbTable ?? null,
-      ...(initial?.layout !== undefined
-        ? {
-            layoutJson:
-              initial.layout === null
-                ? PrismaRuntime.JsonNull
-                : (initial.layout as unknown as Prisma.InputJsonValue),
-          }
-        : {}),
-    },
-  });
+  const tables = normalizeActiveDbTables(initial?.activeDbTables ?? []);
+  const legacyTable = initial?.activeDbTable?.trim() ?? null;
+  const activeDbTables = tables.length > 0 ? tables : legacyTable ? [legacyTable] : [];
+  const activeDbTable = syncLegacyActiveDbTable(activeDbTables) ?? legacyTable;
+  const normalizedRelations = normalizeTableRelations(initial?.tableRelations ?? []);
+
+  const data: Prisma.ProjectCreateInput = {
+    user: { connect: { id: userId } },
+    name: name.trim() || "Project Baru",
+    description: description?.trim() || null,
+    sheetUrls: initial?.sheetUrls ?? [],
+    mergeMode: initial?.mergeMode ?? false,
+    dbConnectionIds: initial?.dbConnectionIds ?? [],
+    activeDbConnectionId: initial?.activeDbConnectionId ?? null,
+    activeDbTable,
+    activeDbTables,
+    ...(normalizedRelations.length > 0
+      ? {
+          tableRelations: normalizedRelations as unknown as Prisma.InputJsonValue,
+        }
+      : {}),
+    ...(initial?.layout !== undefined
+      ? {
+          layoutJson:
+            initial.layout === null
+              ? PrismaRuntime.JsonNull
+              : (initial.layout as unknown as Prisma.InputJsonValue),
+        }
+      : {}),
+  };
+
+  const row = await createProjectRow(data);
   return toProject(row);
 }
 
@@ -151,6 +213,17 @@ export async function updateUserProject(
     data.activeDbConnectionId = input.activeDbConnectionId;
   }
   if (input.activeDbTable !== undefined) data.activeDbTable = input.activeDbTable;
+  if (input.activeDbTables !== undefined) {
+    const tables = normalizeActiveDbTables(input.activeDbTables);
+    data.activeDbTables = tables;
+    data.activeDbTable = syncLegacyActiveDbTable(tables);
+  }
+  if (input.tableRelations !== undefined) {
+    const normalized = normalizeTableRelations(input.tableRelations);
+    if (normalized.length > 0) {
+      data.tableRelations = normalized as unknown as Prisma.InputJsonValue;
+    }
+  }
   if (input.layout !== undefined) {
     data.layoutJson =
       input.layout === null
@@ -159,10 +232,7 @@ export async function updateUserProject(
   }
   if (input.touchOpened) data.lastOpenedAt = new Date();
 
-  const row = await getPrisma().project.update({
-    where: { id: projectId },
-    data,
-  });
+  const row = await updateProjectRow(projectId, data);
   return toProject(row);
 }
 

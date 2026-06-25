@@ -29,6 +29,7 @@ export async function POST(request: NextRequest) {
       dbConnectionIds,
       activeDbConnectionId,
       activeDbTable,
+      activeDbTables,
     } = body ?? {};
     if (!name || typeof name !== "string") {
       return NextResponse.json({ error: "Nama project wajib" }, { status: 400 });
@@ -41,17 +42,26 @@ export async function POST(request: NextRequest) {
         typeof activeDbConnectionId === "string" ? activeDbConnectionId : undefined,
     });
 
+    const tables = Array.isArray(activeDbTables)
+      ? activeDbTables.filter((t: unknown): t is string => typeof t === "string")
+      : undefined;
+
     const project = await createUserProject(user.id, name, description, {
       sheetUrls: Array.isArray(sheetUrls) ? sheetUrls : undefined,
       mergeMode: typeof mergeMode === "boolean" ? mergeMode : undefined,
       ...dbRefs,
       activeDbTable: typeof activeDbTable === "string" ? activeDbTable : undefined,
+      activeDbTables: tables,
+      tableRelations: Array.isArray(body.tableRelations) ? body.tableRelations : undefined,
     });
     return NextResponse.json({ project });
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
-    return NextResponse.json({ error: "Gagal membuat project" }, { status: 500 });
+    console.error("[POST /api/user/projects]", error);
+    const message =
+      error instanceof Error ? error.message : "Gagal membuat project";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

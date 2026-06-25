@@ -1,4 +1,4 @@
-import type { DatabaseConnectionProfile } from "@/lib/types";
+import type { DatabaseConnectionProfile, DatabaseType } from "@/lib/types";
 
 export async function fetchDbConnections(): Promise<DatabaseConnectionProfile[]> {
   const res = await fetch("/api/user/db-connections");
@@ -9,19 +9,20 @@ export async function fetchDbConnections(): Promise<DatabaseConnectionProfile[]>
 
 export async function saveDbConnection(
   profile: DatabaseConnectionProfile,
-  password: string
+  password?: string
 ): Promise<DatabaseConnectionProfile | null> {
   const res = await fetch("/api/user/db-connections", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       id: profile.id,
+      type: profile.type,
       name: profile.name,
       host: profile.host,
       port: profile.port,
       database: profile.database,
       username: profile.username,
-      password,
+      ...(password !== undefined && password !== "" ? { password } : {}),
       ssl: profile.ssl,
       schema: profile.schema,
       lastTestedAt: profile.lastTestedAt,
@@ -29,8 +30,12 @@ export async function saveDbConnection(
       lastTestMessage: profile.lastTestMessage,
     }),
   });
-  if (!res.ok) return null;
-  const json = await res.json();
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(
+      typeof json.error === "string" ? json.error : "Gagal menyimpan koneksi"
+    );
+  }
   return json.connection ?? null;
 }
 
@@ -43,11 +48,12 @@ export async function removeDbConnection(id: string): Promise<boolean> {
 
 export function connectionToApiPayload(
   profile: DatabaseConnectionProfile,
-  extras?: { table?: string; limit?: number }
+  extras?: { table?: string; limit?: number; tables?: string[] }
 ) {
   return {
     connectionId: profile.id,
     connectionName: profile.name,
+    type: profile.type,
     ...extras,
   };
 }
@@ -57,6 +63,7 @@ export function draftConnectionPayload(
   profile: Omit<DatabaseConnectionProfile, "id" | "createdAt"> & { password: string }
 ) {
   return {
+    type: profile.type,
     connectionName: profile.name,
     host: profile.host,
     port: profile.port,

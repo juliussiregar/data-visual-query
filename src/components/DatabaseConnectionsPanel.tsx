@@ -18,7 +18,7 @@ import {
   ChevronUp,
   Server,
 } from "lucide-react";
-import type { DatabaseConnectionProfile, SheetData } from "@/lib/types";
+import type { DatabaseConnectionProfile, DatabaseType, SheetData } from "@/lib/types";
 import {
   fetchDbConnections,
   saveDbConnection,
@@ -26,6 +26,11 @@ import {
   connectionToApiPayload,
   draftConnectionPayload,
 } from "@/lib/datasource-storage";
+import {
+  databaseTypeLabel,
+  defaultPortForType,
+  defaultSchemaForType,
+} from "@/lib/connectors/sql-types";
 import { cn } from "@/lib/utils";
 
 interface DatabaseConnectionsPanelProps {
@@ -40,6 +45,7 @@ interface TableInfo {
 }
 
 const EMPTY_FORM = {
+  dbType: "postgresql" as DatabaseType,
   name: "",
   host: "localhost",
   port: "5432",
@@ -80,18 +86,22 @@ export function DatabaseConnectionsPanel({
   }, [refreshConnections]);
 
   const buildDraftProfile = useCallback((): DatabaseConnectionProfile => {
+    const schema =
+      form.dbType === "mysql"
+        ? defaultSchemaForType("mysql", form.database.trim())
+        : form.schema.trim() || "public";
     return {
       id: crypto.randomUUID(),
-      name: form.name.trim() || `PostgreSQL ${form.host}`,
-      type: "postgresql",
+      name: form.name.trim() || `${databaseTypeLabel(form.dbType)} ${form.host}`,
+      type: form.dbType,
       host: form.host.trim(),
-      port: parseInt(form.port, 10) || 5432,
+      port: parseInt(form.port, 10) || defaultPortForType(form.dbType),
       database: form.database.trim(),
       username: form.username.trim(),
       password: form.password,
       rememberPassword: true,
       ssl: form.ssl,
-      schema: form.schema.trim() || "public",
+      schema,
       createdAt: new Date().toISOString(),
     };
   }, [form]);
@@ -223,7 +233,8 @@ export function DatabaseConnectionsPanel({
             Koneksi Database
           </h3>
           <p className="mt-1 max-w-xl text-xs leading-relaxed text-slate-500">
-            Hubungkan PostgreSQL read-only. Kredensial disimpan terenkripsi di database akun Anda.
+            Hubungkan PostgreSQL atau MySQL read-only. Kredensial disimpan terenkripsi di database
+            akun Anda.
           </p>
         </div>
         <button
@@ -247,7 +258,7 @@ export function DatabaseConnectionsPanel({
         {[
           {
             icon: Server,
-            title: "PostgreSQL",
+            title: "PostgreSQL & MySQL",
             desc: "Read replica, staging, atau lokal",
           },
           {
@@ -274,10 +285,34 @@ export function DatabaseConnectionsPanel({
       {showForm && (
         <div className="surface-card overflow-hidden border-indigo-200/60">
           <div className="border-b border-slate-100 bg-indigo-50/50 px-4 py-3">
-            <p className="text-sm font-medium text-slate-900">Konfigurasi PostgreSQL</p>
+            <p className="text-sm font-medium text-slate-900">Konfigurasi database</p>
             <p className="text-[11px] text-slate-500">
-              Isi detail koneksi lalu klik <strong>Tes koneksi</strong> sebelum menyimpan.
+              Pilih tipe database, isi detail koneksi lalu klik <strong>Tes koneksi</strong>.
             </p>
+            <div className="mt-3 grid max-w-xs grid-cols-2 gap-2">
+              {(["postgresql", "mysql"] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() =>
+                    setForm({
+                      ...EMPTY_FORM,
+                      dbType: type,
+                      port: String(defaultPortForType(type)),
+                      schema: defaultSchemaForType(type, ""),
+                    })
+                  }
+                  className={cn(
+                    "rounded-lg border py-2 text-xs font-medium",
+                    form.dbType === type
+                      ? "border-indigo-300 bg-white text-indigo-800"
+                      : "border-slate-200 text-slate-600"
+                  )}
+                >
+                  {databaseTypeLabel(type)}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="grid gap-4 p-4 sm:grid-cols-2">
@@ -297,10 +332,10 @@ export function DatabaseConnectionsPanel({
             />
             <Field
               label="Port"
-              hint="Default PostgreSQL: 5432"
+              hint={form.dbType === "mysql" ? "Default MySQL: 3306" : "Default PostgreSQL: 5432"}
               value={form.port}
               onChange={(v) => setForm((f) => ({ ...f, port: v }))}
-              placeholder="5432"
+              placeholder={String(defaultPortForType(form.dbType))}
             />
             <Field
               label="Nama database"
@@ -324,13 +359,15 @@ export function DatabaseConnectionsPanel({
               type="password"
               placeholder="••••••••"
             />
-            <Field
-              label="Schema"
-              hint="Biasanya public"
-              value={form.schema}
-              onChange={(v) => setForm((f) => ({ ...f, schema: v }))}
-              placeholder="public"
-            />
+            {form.dbType === "postgresql" && (
+              <Field
+                label="Schema"
+                hint="Biasanya public"
+                value={form.schema}
+                onChange={(v) => setForm((f) => ({ ...f, schema: v }))}
+                placeholder="public"
+              />
+            )}
             <div className="flex flex-col justify-end gap-2">
               <label className="flex items-center gap-2 text-xs text-slate-600">
                 <input
@@ -468,7 +505,7 @@ export function DatabaseConnectionsPanel({
           <Database className="mx-auto h-8 w-8 text-slate-300" />
           <p className="mt-2 text-sm text-slate-600">Belum ada koneksi database</p>
           <p className="mt-1 text-xs text-slate-400">
-            Klik &quot;Koneksi Baru&quot; untuk menghubungkan PostgreSQL
+            Klik &quot;Koneksi Baru&quot; untuk menghubungkan PostgreSQL atau MySQL
           </p>
         </div>
       )}
@@ -598,6 +635,9 @@ function SavedConnectionCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="font-semibold text-slate-900">{connection.name}</h4>
+            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-medium text-slate-600">
+              {databaseTypeLabel(connection.type)}
+            </span>
             <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-medium", statusColor)}>
               {connection.lastTestStatus === "success"
                 ? "Terhubung"

@@ -20,7 +20,13 @@ interface FieldRule {
 
 const FIELD_RULES: FieldRule[] = [
   {
-    pattern: /^no$|^id$|_id$|^id_|no[_\s]?(fasilitas|pengajuan|order|transaksi)/i,
+    pattern: /^.+_id$/i,
+    role: "dimension",
+    businessLabel: "Foreign key",
+    description: "Referensi ke entitas lain — boleh berulang di tabel agregat/fact",
+  },
+  {
+    pattern: /^no$|^id$|^id_|no[_\s]?(fasilitas|pengajuan|order|transaksi)/i,
     role: "identifier",
     businessLabel: "Identifier",
     description: "Kunci unik record",

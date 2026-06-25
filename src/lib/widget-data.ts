@@ -27,6 +27,10 @@ export const AGGREGATION_LABELS: Record<WidgetDataQuery["aggregation"], string> 
   max: "Maximum",
 };
 
+export function defaultTableDisplayColumns(columns: Pick<ColumnMeta, "key">[]): string[] {
+  return columns.map((c) => c.key.trim()).filter(Boolean);
+}
+
 export function getWidgetRows(data: SheetData, widget: WidgetConfig): Record<string, string>[] {
   const q = widget.dataQuery;
   if (!q || q.conditions.length === 0) return data.rows;
@@ -258,6 +262,7 @@ export function buildTableFromWidget(
   rows: Record<string, string>[];
   columns: SheetData["columns"];
   summaryRow?: Record<string, string>;
+  totalRows: number;
 } {
   const q = resolvedQuery(widget);
   let rows = getWidgetRows(data, widget);
@@ -276,7 +281,6 @@ export function buildTableFromWidget(
   }
 
   const allCols = data.columns.filter((c) => c.key.trim());
-  const limit = q.limit ?? 15;
   const columns =
     q.displayColumns && q.displayColumns.length > 0
       ? q.displayColumns
@@ -284,14 +288,17 @@ export function buildTableFromWidget(
           .filter((c): c is (typeof allCols)[number] => !!c)
       : allCols.slice(0, 6);
 
-  const displayRows = limit > 0 ? rows.slice(0, limit) : rows;
-
   const summaryRow =
     q.tableSummary?.enabled && columns.length > 0
       ? computeTableSummaryRow(rows, columns, q.tableSummary)
       : undefined;
 
-  return { rows: displayRows, columns, summaryRow };
+  return {
+    rows,
+    columns,
+    summaryRow,
+    totalRows: rows.length,
+  };
 }
 
 function shapeToChartType(shape?: WidgetVisualShape): ChartType | undefined {
@@ -316,8 +323,7 @@ export function widgetPreviewSummary(data: SheetData, widget: WidgetConfig): str
     const summary = q.tableSummary?.enabled
       ? ` · ${q.tableSummary.label ?? AGGREGATION_LABELS[q.tableSummary.aggregation]} row`
       : "";
-    const limitLabel = q.limit === 0 ? "all" : String(q.limit ?? 15);
-    return `${rows.length.toLocaleString()} matching rows · showing ${limitLabel} · ${colCount} columns${summary}`;
+    return `${rows.length.toLocaleString()} matching rows · scroll · ${colCount} columns${summary}`;
   }
 
   const parts: string[] = [`${rows.length.toLocaleString()} rows`];

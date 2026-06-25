@@ -1,6 +1,6 @@
 import type { ChartType, WidgetConfig, WidgetType, WidgetVisualShape } from "./types";
 import type { SheetData } from "./types";
-import { EMPTY_WIDGET_DATA_QUERY } from "./widget-data";
+import { EMPTY_WIDGET_DATA_QUERY, defaultTableDisplayColumns } from "./widget-data";
 import { defaultLayoutWidth } from "./widget-layout";
 
 export interface WidgetShapeDef {
@@ -104,17 +104,15 @@ export function getShapeDef(id: WidgetVisualShape): WidgetShapeDef | undefined {
 export function createWidgetFromShape(
   shapeId: WidgetVisualShape,
   data: SheetData,
-  maxOrder: number
+  maxOrder: number,
+  sourceTable?: string
 ): WidgetConfig {
   const shape = getShapeDef(shapeId)!;
   const categoryCol = data.columns.find((c) => c.type === "category" || c.type === "text");
   const numericCol = data.columns.find((c) => c.type === "number");
   const groupBy = categoryCol?.key;
   const measure = numericCol?.key;
-  const defaultColumns = data.columns
-    .filter((c) => c.key.trim())
-    .slice(0, 6)
-    .map((c) => c.key);
+  const defaultColumns = defaultTableDisplayColumns(data.columns);
 
   return {
     id: `w-${crypto.randomUUID()}`,
@@ -129,12 +127,13 @@ export function createWidgetFromShape(
     valueKey: measure,
     aggregation: "count",
     title: shape.label,
+    ...(sourceTable ? { sourceTable } : {}),
     dataQuery: {
       ...EMPTY_WIDGET_DATA_QUERY,
       groupByKey: groupBy,
       measureKey: measure,
       aggregation: shapeId === "stat" && measure ? "sum" : "count",
-      limit: shapeId === "ranking" ? 10 : shapeId === "table" ? 15 : 12,
+      limit: shapeId === "ranking" ? 10 : shapeId === "table" ? undefined : 12,
       displayColumns: shapeId === "table" ? defaultColumns : undefined,
       sort:
         shapeId === "ranking" && measure

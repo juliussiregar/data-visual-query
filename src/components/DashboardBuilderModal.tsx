@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
@@ -16,6 +16,7 @@ import {
   Sparkles,
   Trash2,
   X,
+  AlertCircle,
 } from "lucide-react";
 import type { DashboardLayout, SheetData, WidgetConfig, WidgetVisualShape } from "@/lib/types";
 import { getVisibleWidgets, widgetLabel } from "@/lib/layout";
@@ -26,8 +27,13 @@ import { WidgetPreview } from "./WidgetPreview";
 import { MultiSheetPanel } from "./MultiSheetPanel";
 import type { LayoutSyncStatus } from "@/hooks/useLayoutAutoSave";
 import { validateWidgetConfig } from "@/lib/widget-data";
+import type { TableRelation } from "@/lib/sql-query-types";
+import { formatDatasetLabel } from "@/lib/table-relations";
+import { resolveWidgetSheetData } from "@/lib/db-table-datasets";
+import { detectSourcesKind } from "@/lib/data-source-labels";
 import { getWidgetLayoutWidth, layoutWidthLabel } from "@/lib/widget-layout";
 import { cn } from "@/lib/utils";
+import { useToast } from "./ToastProvider";
 
 type WizardMode = "add" | "edit" | null;
 
@@ -35,6 +41,9 @@ interface DashboardBuilderModalProps {
   open: boolean;
   layout: DashboardLayout;
   data: SheetData;
+  dbDatasets?: Record<string, SheetData> | null;
+  activeDbTables?: string[];
+  tableRelations?: TableRelation[];
   sheetUrls: string[];
   syncStatus: LayoutSyncStatus;
   initialShape?: WidgetVisualShape;
@@ -64,6 +73,9 @@ function BuilderDialog({
   open,
   layout,
   data,
+  dbDatasets,
+  activeDbTables = [],
+  tableRelations,
   sheetUrls,
   syncStatus,
   initialShape,
@@ -81,6 +93,21 @@ function BuilderDialog({
   const [wizardStep, setWizardStep] = useState<1 | 2>(1);
   const [editingWidget, setEditingWidget] = useState<WidgetConfig | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const configScrollRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
+
+  const reportValidationError = (error: string) => {
+    setValidationError(error);
+    toast(error, "error");
+    configScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const dataForWidget = (widget: WidgetConfig) =>
+    resolveWidgetSheetData(data, dbDatasets, widget);
+
+  const defaultSourceTable = activeDbTables[0];
+  const isDatabase =
+    activeDbTables.length > 0 || detectSourcesKind(sheetUrls) === "database";
 
   useEffect(() => {
     if (open) {
@@ -104,12 +131,17 @@ function BuilderDialog({
 
       if (initialShape) {
         const maxOrder = Math.max(0, ...layout.widgets.map((w) => w.order));
-        setEditingWidget(createWidgetFromShape(initialShape, data, maxOrder));
+        const widgetData = defaultSourceTable && dbDatasets?.[defaultSourceTable]
+          ? dbDatasets[defaultSourceTable]
+          : data;
+        setEditingWidget(
+          createWidgetFromShape(initialShape, widgetData, maxOrder, defaultSourceTable)
+        );
         setWizardMode("add");
         setWizardStep(2);
       }
     }
-  }, [open, layout, data, initialShape, initialEditWidgetId]);
+  }, [open, layout, data, dbDatasets, defaultSourceTable, initialShape, initialEditWidgetId]);
 
   useEffect(() => {
     if (!open) return;
@@ -144,7 +176,10 @@ function BuilderDialog({
   };
 
   const pickShape = (shapeId: WidgetVisualShape) => {
-    setEditingWidget(createWidgetFromShape(shapeId, data, maxOrder()));
+    const widgetData = defaultSourceTable && dbDatasets?.[defaultSourceTable]
+      ? dbDatasets[defaultSourceTable]
+      : data;
+    setEditingWidget(createWidgetFromShape(shapeId, widgetData, maxOrder(), defaultSourceTable));
     setWizardStep(2);
   };
 
@@ -161,27 +196,53 @@ function BuilderDialog({
     setEditingWidget(null);
   };
 
+  const mergeEditingWidget = (
+    currentDraft: DashboardLayout,
+    widget: WidgetConfig
+  ): { draft: DashboardLayout } | { error: string } => {
+    const err = validateWidgetConfig(widget, dataForWidget(widget));
+    if (err) return { error: err };
+    const saved = { ...widget, visible: true };
+    const exists = currentDraft.widgets.some((w) => w.id === widget.id);
+    const widgets = exists
+      ? currentDraft.widgets.map((w) => (w.id === widget.id ? saved : w))
+      : [...currentDraft.widgets, saved];
+    return {
+      draft: {
+        ...currentDraft,
+        updatedAt: new Date().toISOString(),
+        widgets,
+      },
+    };
+  };
+
   const commitWidget = () => {
     if (!editingWidget) return;
-    const err = validateWidgetConfig(editingWidget, data);
-    if (err) {
-      setValidationError(err);
+    const result = mergeEditingWidget(draft, editingWidget);
+    if ("error" in result) {
+      reportValidationError(result.error);
       return;
     }
     setValidationError(null);
-    const saved = { ...editingWidget, visible: true };
-    const exists = draft.widgets.some((w) => w.id === editingWidget.id);
-    const widgets = exists
-      ? draft.widgets.map((w) => (w.id === editingWidget.id ? saved : w))
-      : [...draft.widgets, saved];
-    const nextDraft = {
-      ...draft,
-      updatedAt: new Date().toISOString(),
-      widgets,
-    };
-    setDraft(nextDraft);
-    onSave(nextDraft);
+    setDraft(result.draft);
+    onSave(result.draft);
     cancelWizard();
+  };
+
+  const saveAndClose = () => {
+    let finalDraft = draft;
+    if (wizardMode && wizardStep === 2 && editingWidget) {
+      const result = mergeEditingWidget(draft, editingWidget);
+      if ("error" in result) {
+        reportValidationError(result.error);
+        return;
+      }
+      finalDraft = result.draft;
+      setDraft(finalDraft);
+      setValidationError(null);
+    }
+    onSave(finalDraft);
+    onClose();
   };
 
   const removeWidget = (widgetId: string) => {
@@ -262,7 +323,7 @@ function BuilderDialog({
       role="presentation"
     >
       <div
-        className="absolute inset-0 bg-white/85 backdrop-blur-md animate-fade-in"
+        className="absolute inset-0 cursor-pointer bg-white/85 backdrop-blur-md animate-fade-in"
         onClick={onClose}
         aria-hidden
       />
@@ -335,7 +396,10 @@ function BuilderDialog({
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
-          <div className="min-h-0 flex-1 overflow-y-auto border-b border-slate-200 p-5 sm:p-6 lg:border-b-0 lg:border-r">
+          <div
+            ref={configScrollRef}
+            className="min-h-0 flex-1 overflow-y-auto border-b border-slate-200 p-5 sm:p-6 lg:border-b-0 lg:border-r"
+          >
             {wizardMode ? (
               wizardStep === 1 ? (
                 <section className="space-y-5">
@@ -373,6 +437,15 @@ function BuilderDialog({
               ) : (
                 editingWidget && (
                   <div className="space-y-4">
+                    {validationError && (
+                      <div
+                        role="alert"
+                        className="sticky top-0 z-10 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700 shadow-sm"
+                      >
+                        <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>{validationError}</span>
+                      </div>
+                    )}
                     {editingWidget.visualShape && (
                       <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
                         <ShapeSilhouette
@@ -392,15 +465,14 @@ function BuilderDialog({
                       </div>
                     )}
                     <WidgetDataConfigurator
-                      data={data}
+                      data={dataForWidget(editingWidget)}
+                      primaryData={data}
+                      dbDatasets={dbDatasets}
+                      availableTables={activeDbTables}
+                      tableRelations={tableRelations}
                       widget={editingWidget}
                       onChange={patchEditing}
                     />
-                    {validationError && (
-                      <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                        {validationError}
-                      </p>
-                    )}
                     <button
                       type="button"
                       onClick={commitWidget}
@@ -458,8 +530,13 @@ function BuilderDialog({
                           )}
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-xs font-medium text-slate-800">
-                              {widgetLabel(w, data)}
+                              {widgetLabel(w, dataForWidget(w))}
                             </p>
+                            {w.sourceTable && activeDbTables.length > 1 && (
+                              <p className="text-[10px] text-slate-400">
+                                {formatDatasetLabel(w.sourceTable, tableRelations)}
+                              </p>
+                            )}
                             {w.visualShape && (
                               <p className="text-[10px] text-slate-400">
                                 {layoutWidthLabel(getWidgetLayoutWidth(w))}
@@ -521,14 +598,16 @@ function BuilderDialog({
                   )}
                 </section>
 
-                <MultiSheetPanel
-                  layout={draft}
-                  sheetUrls={sheetUrls}
-                  onAddSheet={onAddSheet}
-                  onRemoveSheet={onRemoveSheet}
-                  onToggleMerge={onToggleMerge}
-                  onReloadMerged={onReloadMerged}
-                />
+                {!isDatabase && (
+                  <MultiSheetPanel
+                    layout={draft}
+                    sheetUrls={sheetUrls}
+                    onAddSheet={onAddSheet}
+                    onRemoveSheet={onRemoveSheet}
+                    onToggleMerge={onToggleMerge}
+                    onReloadMerged={onReloadMerged}
+                  />
+                )}
               </>
             )}
           </div>
@@ -550,7 +629,7 @@ function BuilderDialog({
 
             <div className="flex-1 overflow-y-auto p-5">
               {wizardMode && wizardStep === 2 && editingWidget ? (
-                <WidgetPreview data={data} widget={editingWidget} />
+                <WidgetPreview data={dataForWidget(editingWidget)} widget={editingWidget} />
               ) : (
                 <div className="mx-auto max-w-[280px] rounded-[1.75rem] border border-slate-200 bg-white p-3 shadow-lg">
                   <div className="mb-2 flex justify-center">
@@ -591,14 +670,15 @@ function BuilderDialog({
             </button>
             <button
               type="button"
-              onClick={() => {
-                onSave(draft);
-                onClose();
-              }}
+              onClick={saveAndClose}
               className="flex items-center gap-2 rounded-xl bg-indigo-500 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition-all hover:bg-indigo-400"
             >
               <Check className="h-4 w-4" />
-              Save & close
+              {wizardMode && wizardStep === 2 && editingWidget
+                ? wizardMode === "add"
+                  ? "Add & close"
+                  : "Save & close"
+                : "Save & close"}
             </button>
           </div>
         </div>

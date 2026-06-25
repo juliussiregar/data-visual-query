@@ -323,11 +323,26 @@ export function DataTable({
       )}
 
       {showPaginationBar && (
-        <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
-          <span className="text-xs text-slate-500">
-            Rows {currentPage * effectivePageSize + 1}–
-            {Math.min((currentPage + 1) * effectivePageSize, filtered.length)} of{" "}
-            {filtered.length.toLocaleString()}
+        <div
+          className={cn(
+            "flex items-center justify-between border-t border-slate-200 px-4 py-3",
+            compact && "px-3 py-2"
+          )}
+        >
+          <span className={cn("text-xs text-slate-500", compact && "text-[11px]")}>
+            {compact ? (
+              <>
+                Baris {currentPage * effectivePageSize + 1}–
+                {Math.min((currentPage + 1) * effectivePageSize, filtered.length)} dari{" "}
+                {filtered.length.toLocaleString("id-ID")}
+              </>
+            ) : (
+              <>
+                Rows {currentPage * effectivePageSize + 1}–
+                {Math.min((currentPage + 1) * effectivePageSize, filtered.length)} of{" "}
+                {filtered.length.toLocaleString()}
+              </>
+            )}
           </span>
           <div className="flex gap-2">
             <button

@@ -16,6 +16,11 @@
 #
 # Hanya database (dev lokal tanpa container app):
 #   docker compose up -d db
+#   docker compose up -d analytics-db   # database IoT untuk analisis
+#   docker compose up -d mysql-analytics-db   # database retail MySQL untuk analisis
+#   npm run db:setup
+#   npm run analytics:setup
+#   npm run mysql:setup
 
 services:
   db:
@@ -40,6 +45,59 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    networks:
+      - sheetvision
+
+  analytics-db:
+    image: postgres:16-alpine
+    container_name: sheetvision-analytics-db
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${ANALYTICS_DB_PORT:-54328}:5432"
+    environment:
+      POSTGRES_DB: ${ANALYTICS_DB_NAME:-iot_analytics}
+      POSTGRES_USER: ${ANALYTICS_DB_USER:-iot_admin}
+      POSTGRES_PASSWORD: ${ANALYTICS_DB_PASSWORD:?Set ANALYTICS_DB_PASSWORD in .env}
+      ANALYTICS_DB_READER_USER: ${ANALYTICS_DB_READER_USER:-iot_reader}
+      ANALYTICS_DB_READER_PASSWORD: ${ANALYTICS_DB_READER_PASSWORD:-iot_reader}
+    volumes:
+      - analytics_db_data:/var/lib/postgresql/data
+      - ./docker/analytics-db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${ANALYTICS_DB_USER:-iot_admin} -d ${ANALYTICS_DB_NAME:-iot_analytics}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - sheetvision
+
+  mysql-analytics-db:
+    image: mysql:8.4
+    container_name: sheetvision-mysql-analytics-db
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MYSQL_ANALYTICS_DB_PORT:-33068}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ANALYTICS_DB_PASSWORD:?Set MYSQL_ANALYTICS_DB_PASSWORD in .env}
+      MYSQL_DATABASE: ${MYSQL_ANALYTICS_DB_NAME:-retail_analytics}
+      MYSQL_USER: ${MYSQL_ANALYTICS_DB_USER:-retail_admin}
+      MYSQL_PASSWORD: ${MYSQL_ANALYTICS_DB_PASSWORD:?Set MYSQL_ANALYTICS_DB_PASSWORD in .env}
+      MYSQL_ANALYTICS_DB_READER_USER: ${MYSQL_ANALYTICS_DB_READER_USER:-retail_reader}
+      MYSQL_ANALYTICS_DB_READER_PASSWORD: ${MYSQL_ANALYTICS_DB_READER_PASSWORD:-retail_reader}
+    volumes:
+      - mysql_analytics_db_data:/var/lib/mysql
+      - ./docker/mysql-analytics-db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ANALYTICS_DB_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 40s
     networks:
       - sheetvision
 
@@ -69,6 +127,8 @@ services:
 
 volumes:
   db_data:
+  analytics_db_data:
+  mysql_analytics_db_data:
 
 networks:
   sheetvision:

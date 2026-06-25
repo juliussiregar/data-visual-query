@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { resolvePostgresConfig, previewPostgresTable } from "@/lib/connectors/postgres";
+import { resolveSqlConfig, previewSqlTable } from "@/lib/connectors/sql";
 import { AuthError, requireSessionUser } from "@/lib/session-server";
 
 export const dynamic = "force-dynamic";
@@ -13,8 +13,8 @@ export async function POST(request: NextRequest) {
     if (!table || typeof table !== "string") {
       return NextResponse.json({ error: "table wajib diisi" }, { status: 400 });
     }
-    const config = await resolvePostgresConfig(body, user.id);
-    const preview = await previewPostgresTable(config, table, limit ?? 5);
+    const config = await resolveSqlConfig(body, user.id);
+    const preview = await previewSqlTable(config, table, limit ?? 5);
     return NextResponse.json(preview);
   } catch (error) {
     if (error instanceof AuthError) {

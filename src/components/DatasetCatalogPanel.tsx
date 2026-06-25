@@ -63,7 +63,9 @@ export function DatasetCatalogPanel({ dataset, className }: DatasetCatalogPanelP
                 ? "Multi-sheet"
                 : dataset.sourceType === "postgresql"
                   ? "PostgreSQL"
-                  : "Google Sheets"}
+                  : dataset.sourceType === "mysql"
+                    ? "MySQL"
+                    : "Google Sheets"}
             </span>
           </div>
 

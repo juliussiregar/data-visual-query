@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Sheet,
+  Database,
   ChevronDown,
   Copy,
   Check,
@@ -15,6 +16,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { truncateUrl, deriveSheetLabel } from "@/lib/sheet-storage";
+import { detectSourcesKind, formatDbTableLabel, databaseKindLabel } from "@/lib/data-source-labels";
 import { getProjectShareUrl } from "@/lib/project-storage";
 import { cn } from "@/lib/utils";
 
@@ -26,7 +28,11 @@ interface SheetManagerMenuProps {
   mergeMode: boolean;
   joinMode?: boolean;
   loading?: boolean;
+  sourceKind?: "sheet" | "database";
+  activeDbTables?: string[];
+  selectedTable?: string;
   onSwitchSheet: (url: string) => void;
+  onSelectTable?: (table: string) => void;
   onAddSheet: (url: string) => void;
   onRemoveSheet: (url: string) => void;
   onToggleMerge: (enabled: boolean) => void;
@@ -49,7 +55,11 @@ export function SheetManagerMenu({
   mergeMode,
   joinMode,
   loading,
+  sourceKind,
+  activeDbTables = [],
+  selectedTable,
   onSwitchSheet,
+  onSelectTable,
   onAddSheet,
   onRemoveSheet,
   onToggleMerge,
@@ -68,15 +78,22 @@ export function SheetManagerMenu({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
+  const resolvedKind =
+    sourceKind ??
+    (detectSourcesKind(sheetUrls) === "database" ? "database" : "sheet");
+  const isDatabase = resolvedKind === "database";
+
   const primaryUrl = sheetUrls[0] ?? "";
-  const isMulti = sheetUrls.length > 1;
+  const isMulti = isDatabase ? activeDbTables.length > 1 : sheetUrls.length > 1;
   const projectSheets = projectSheetUrls.length > 0 ? projectSheetUrls : sheetUrls;
+  const tableCount = isDatabase ? activeDbTables.length : sheetUrls.length;
 
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
-    if (open && isMulti) setTab("merge");
-  }, [open, isMulti]);
+    if (open && isMulti && !isDatabase) setTab("merge");
+    if (open && isDatabase) setTab("switch");
+  }, [open, isMulti, isDatabase]);
 
   const updatePosition = () => {
     if (!triggerRef.current) return;
@@ -116,123 +133,196 @@ export function SheetManagerMenu({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const panelTitle = isDatabase
+    ? sheetUrls[0]
+      ? databaseKindLabel(sheetUrls[0])
+      : "Database SQL"
+    : "Google Sheet";
+  const panelSubtitle = isDatabase
+    ? isMulti
+      ? `${tableCount} tabel aktif di project`
+      : "1 tabel aktif"
+    : isMulti
+      ? joinMode
+        ? `${sheetUrls.length} sheet · mode relasional (join)`
+        : `${sheetUrls.length} sheet · digabung (union)`
+      : "1 sheet aktif";
+
   const panel = open && mounted && (
     <div
       ref={panelRef}
       role="dialog"
-      aria-label="Kelola Google Sheet"
+      aria-label={isDatabase ? "Kelola tabel database" : "Kelola Google Sheet"}
       className="layer-dropdown animate-fade-in fixed overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/10"
       style={{ top: position.top, left: position.left, width: PANEL_WIDTH }}
     >
       <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
-        <p className="text-sm font-semibold text-slate-900">Google Sheet</p>
-        <p className="mt-0.5 text-[10px] text-slate-500">
-          {isMulti
-            ? joinMode
-              ? `${sheetUrls.length} sheet · mode relasional (join)`
-              : `${sheetUrls.length} sheet · digabung (union)`
-            : "1 sheet aktif"}
-        </p>
+        <p className="text-sm font-semibold text-slate-900">{panelTitle}</p>
+        <p className="mt-0.5 text-[10px] text-slate-500">{panelSubtitle}</p>
       </div>
 
-      <div className="flex border-b border-slate-100 p-1">
-        <button
-          type="button"
-          onClick={() => setTab("switch")}
-          className={cn(
-            "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium",
-            tab === "switch" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"
-          )}
-        >
-          <ArrowLeftRight className="h-3.5 w-3.5" />
-          Ganti Sheet
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab("merge")}
-          className={cn(
-            "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium",
-            tab === "merge" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"
-          )}
-        >
-          <Layers className="h-3.5 w-3.5" />
-          Gabungkan
-        </button>
-      </div>
+      {!isDatabase && (
+        <div className="flex border-b border-slate-100 p-1">
+          <button
+            type="button"
+            onClick={() => setTab("switch")}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium",
+              tab === "switch" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"
+            )}
+          >
+            <ArrowLeftRight className="h-3.5 w-3.5" />
+            Ganti Sheet
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("merge")}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium",
+              tab === "merge" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500"
+            )}
+          >
+            <Layers className="h-3.5 w-3.5" />
+            Gabungkan
+          </button>
+        </div>
+      )}
 
-      {tab === "switch" && (
+      {(tab === "switch" || isDatabase) && (
         <div className="max-h-[min(420px,70vh)] overflow-y-auto p-3">
-          {primaryUrl && (
-            <div className="mb-3 space-y-2 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
-              <p className="text-[10px] font-medium uppercase tracking-wide text-indigo-600">
-                Sedang dibuka
+          {isDatabase ? (
+            <>
+              <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
+                Tiap tabel bisa dipakai widget berbeda di dashboard. Pilih tabel untuk
+                dilihat di tab Data.
               </p>
-              <p className="text-xs font-medium text-slate-900">
-                {displayLabel(primaryUrl, sheetLabels)}
-              </p>
-              <p className="truncate text-[10px] text-slate-500" title={primaryUrl}>
-                {truncateUrl(primaryUrl, 44)}
-              </p>
-              {projectId && (
-                <button
-                  type="button"
-                  onClick={() => void handleCopyShare()}
-                  className="btn-ghost mt-1 w-full justify-center py-1.5 text-[11px]"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="h-3 w-3 text-emerald-500" />
-                      Link project disalin
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3 w-3" />
-                      Salin link project
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
-          )}
 
-          <p className="mb-2 px-1 text-[10px] font-medium text-slate-500">
-            Sheet di project ini — klik untuk ganti
-          </p>
-          {projectSheets.length === 0 ? (
-            <p className="px-2 py-4 text-center text-xs text-slate-400">
-              Belum ada sheet di project. Tambahkan di tab Atur Project.
-            </p>
+              {selectedTable && (
+                <div className="mb-3 space-y-2 rounded-xl border border-violet-100 bg-violet-50/40 p-3">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-violet-600">
+                    Sedang dilihat (tab Data)
+                  </p>
+                  <p className="text-xs font-medium text-slate-900">
+                    {formatDbTableLabel(selectedTable)}
+                  </p>
+                </div>
+              )}
+
+              <p className="mb-2 px-1 text-[10px] font-medium text-slate-500">
+                Tabel di project ini ({activeDbTables.length})
+              </p>
+              {activeDbTables.length === 0 ? (
+                <p className="px-2 py-4 text-center text-xs text-slate-400">
+                  Belum ada tabel. Atur di pengaturan project.
+                </p>
+              ) : (
+                <ul className="space-y-1">
+                  {activeDbTables.map((table) => {
+                    const isActive = selectedTable === table;
+                    return (
+                      <li key={table}>
+                        <button
+                          type="button"
+                          disabled={loading || isActive}
+                          onClick={() => {
+                            onSelectTable?.(table);
+                            setOpen(false);
+                          }}
+                          className={cn(
+                            "w-full rounded-xl p-2 text-left transition-colors hover:bg-slate-50 disabled:opacity-60",
+                            isActive && "bg-violet-50 ring-1 ring-violet-200"
+                          )}
+                        >
+                          <p className="truncate text-xs font-medium text-slate-900">
+                            {formatDbTableLabel(table)}
+                          </p>
+                          <p className="truncate text-[10px] text-slate-500">{table}</p>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </>
           ) : (
-            <ul className="space-y-1">
-              {projectSheets.map((url) => {
-                const isActive = !isMulti && primaryUrl === url;
-                const inMerge = sheetUrls.includes(url);
-                return (
-                  <li key={url}>
+            <>
+              {primaryUrl && (
+                <div className="mb-3 space-y-2 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-indigo-600">
+                    Sedang dibuka
+                  </p>
+                  <p className="text-xs font-medium text-slate-900">
+                    {displayLabel(primaryUrl, sheetLabels)}
+                  </p>
+                  <p className="truncate text-[10px] text-slate-500" title={primaryUrl}>
+                    {truncateUrl(primaryUrl, 44)}
+                  </p>
+                  {projectId && (
                     <button
                       type="button"
-                      disabled={loading || isActive}
-                      onClick={() => {
-                        onSwitchSheet(url);
-                        setOpen(false);
-                      }}
-                      className={cn(
-                        "w-full rounded-xl p-2 text-left transition-colors hover:bg-slate-50 disabled:opacity-60",
-                        isActive && "bg-indigo-50 ring-1 ring-indigo-200"
-                      )}
+                      onClick={() => void handleCopyShare()}
+                      className="btn-ghost mt-1 w-full justify-center py-1.5 text-[11px]"
                     >
-                      <p className="truncate text-xs font-medium text-slate-900">
-                        {displayLabel(url, sheetLabels)}
-                      </p>
-                      <p className="truncate text-[10px] text-slate-500">{truncateUrl(url, 38)}</p>
-                      {inMerge && isMulti && (
-                        <p className="mt-0.5 text-[10px] text-indigo-600">Termasuk gabungan aktif</p>
+                      {copied ? (
+                        <>
+                          <Check className="h-3 w-3 text-emerald-500" />
+                          Link project disalin
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3 w-3" />
+                          Salin link project
+                        </>
                       )}
                     </button>
-                  </li>
-                );
-              })}
-            </ul>
+                  )}
+                </div>
+              )}
+
+              <p className="mb-2 px-1 text-[10px] font-medium text-slate-500">
+                Sheet di project ini — klik untuk ganti
+              </p>
+              {projectSheets.length === 0 ? (
+                <p className="px-2 py-4 text-center text-xs text-slate-400">
+                  Belum ada sheet di project. Tambahkan di tab Atur Project.
+                </p>
+              ) : (
+                <ul className="space-y-1">
+                  {projectSheets.map((url) => {
+                    const isActive = !isMulti && primaryUrl === url;
+                    const inMerge = sheetUrls.includes(url);
+                    return (
+                      <li key={url}>
+                        <button
+                          type="button"
+                          disabled={loading || isActive}
+                          onClick={() => {
+                            onSwitchSheet(url);
+                            setOpen(false);
+                          }}
+                          className={cn(
+                            "w-full rounded-xl p-2 text-left transition-colors hover:bg-slate-50 disabled:opacity-60",
+                            isActive && "bg-indigo-50 ring-1 ring-indigo-200"
+                          )}
+                        >
+                          <p className="truncate text-xs font-medium text-slate-900">
+                            {displayLabel(url, sheetLabels)}
+                          </p>
+                          <p className="truncate text-[10px] text-slate-500">
+                            {truncateUrl(url, 38)}
+                          </p>
+                          {inMerge && isMulti && (
+                            <p className="mt-0.5 text-[10px] text-indigo-600">
+                              Termasuk gabungan aktif
+                            </p>
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </>
           )}
 
           <button
@@ -249,7 +339,7 @@ export function SheetManagerMenu({
         </div>
       )}
 
-      {tab === "merge" && (
+      {tab === "merge" && !isDatabase && (
         <div className="max-h-[min(420px,70vh)] overflow-y-auto p-3">
           <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
             Gabungkan beberapa sheet menjadi satu tabel. Kolom{" "}
@@ -337,8 +427,30 @@ export function SheetManagerMenu({
           )}
         </div>
       )}
+
+      {isDatabase && (
+        <div className="border-t border-slate-100 p-3">
+          <button
+            type="button"
+            disabled={loading}
+            onClick={onReload}
+            className="flex w-full items-center justify-center gap-1.5 text-xs font-medium text-violet-700 hover:underline"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+            Muat ulang semua tabel
+          </button>
+        </div>
+      )}
     </div>
   );
+
+  const triggerLabel = isDatabase
+    ? isMulti
+      ? `${tableCount} Tabel`
+      : "Kelola Tabel"
+    : isMulti
+      ? "Gabungan Sheet"
+      : "Ganti Sheet";
 
   return (
     <div ref={containerRef} className={cn("relative", className)}>
@@ -353,20 +465,29 @@ export function SheetManagerMenu({
         className={cn(
           "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium transition-colors",
           open
-            ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+            ? isDatabase
+              ? "border-violet-400 bg-violet-50 text-violet-700"
+              : "border-indigo-400 bg-indigo-50 text-indigo-700"
             : "border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:bg-indigo-50/50"
         )}
       >
         {loading ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />
+        ) : isDatabase ? (
+          <Database className="h-3.5 w-3.5 text-violet-500" />
         ) : (
           <Sheet className="h-3.5 w-3.5 text-indigo-500" />
         )}
-        <span className="hidden sm:inline">{isMulti ? "Gabungan Sheet" : "Ganti Sheet"}</span>
-        <span className="sm:hidden">Sheet</span>
+        <span className="hidden sm:inline">{triggerLabel}</span>
+        <span className="sm:hidden">{isDatabase ? "Tabel" : "Sheet"}</span>
         {isMulti && (
-          <span className="rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-            {sheetUrls.length}
+          <span
+            className={cn(
+              "rounded-full px-1.5 py-0.5 text-[10px] font-semibold text-white",
+              isDatabase ? "bg-violet-600" : "bg-indigo-600"
+            )}
+          >
+            {tableCount}
           </span>
         )}
         <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />

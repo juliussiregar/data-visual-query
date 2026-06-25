@@ -1,4 +1,6 @@
 import pg from "pg";
+import { parseTableRef } from "@/lib/sql-join-builder";
+import type { ForeignKeyEdge } from "@/lib/join-key-suggest";
 
 const { Pool } = pg;
 
@@ -110,6 +112,56 @@ export async function listPostgresTables(
   }
 }
 
+export async function listPostgresForeignKeysBetween(
+  config: PostgresConnectionConfig,
+  tableA: string,
+  tableB: string
+): Promise<ForeignKeyEdge[]> {
+  const schema = config.schema ?? "public";
+  const refA = parseTableRef(tableA, schema);
+  const refB = parseTableRef(tableB, schema);
+  const pool = new Pool(toPoolConfig(config));
+  try {
+    const res = await pool.query(
+      `SELECT
+         rel_from.relname AS from_table,
+         a.attname AS from_column,
+         rel_to.relname AS to_table,
+         af.attname AS to_column
+       FROM pg_constraint c
+       JOIN pg_namespace n ON n.oid = c.connamespace
+       JOIN pg_class rel_from ON rel_from.oid = c.conrelid
+       JOIN pg_class rel_to ON rel_to.oid = c.confrelid
+       JOIN pg_attribute a
+         ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey) AND NOT a.attisdropped
+       JOIN pg_attribute af
+         ON af.attrelid = c.confrelid AND af.attnum = ANY(c.confkey) AND NOT af.attisdropped
+       WHERE c.contype = 'f'
+         AND n.nspname = $1
+         AND (
+           (rel_from.relname = $2 AND rel_to.relname = $3)
+           OR (rel_from.relname = $3 AND rel_to.relname = $2)
+         )`,
+      [schema, refA.name, refB.name]
+    );
+    return res.rows.map(
+      (r: {
+        from_table: string;
+        from_column: string;
+        to_table: string;
+        to_column: string;
+      }) => ({
+        fromTable: r.from_table,
+        fromColumn: r.from_column,
+        toTable: r.to_table,
+        toColumn: r.to_column,
+      })
+    );
+  } finally {
+    await pool.end();
+  }
+}
+
 export async function previewPostgresTable(
   config: PostgresConnectionConfig,
   tableName: string,
@@ -124,6 +176,44 @@ export async function previewPostgresTable(
       columns,
       rows: res.rows.map((r) => rowToRecord(r as Record<string, unknown>)),
     };
+  } finally {
+    await pool.end();
+  }
+}
+
+export async function listPostgresTableColumns(
+  config: PostgresConnectionConfig,
+  tableName: string
+): Promise<string[]> {
+  const schema = config.schema ?? "public";
+  const ref = parseTableRef(tableName, schema);
+  const pool = new Pool(toPoolConfig(config));
+  try {
+    const res = await pool.query(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = $1 AND table_name = $2
+       ORDER BY ordinal_position`,
+      [ref.schema, ref.name]
+    );
+    return res.rows.map((r: { column_name: string }) => r.column_name);
+  } finally {
+    await pool.end();
+  }
+}
+
+export async function executePostgresQuery(
+  config: PostgresConnectionConfig,
+  sql: string,
+  params: unknown[] = []
+): Promise<Record<string, string>[]> {
+  if (!/^\s*SELECT\b/i.test(sql)) {
+    throw new Error("Hanya query SELECT yang diizinkan");
+  }
+  const pool = new Pool(toPoolConfig(config));
+  try {
+    const res = await pool.query(sql, params);
+    return res.rows.map((r) => rowToRecord(r as Record<string, unknown>));
   } finally {
     await pool.end();
   }

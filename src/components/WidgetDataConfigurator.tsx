@@ -5,8 +5,10 @@ import type { SheetData, WidgetConfig, WidgetDataQuery } from "@/lib/types";
 import {
   AGGREGATION_LABELS,
   EMPTY_WIDGET_DATA_QUERY,
+  defaultTableDisplayColumns,
   widgetPreviewSummary,
 } from "@/lib/widget-data";
+import { resolveWidgetSheetData } from "@/lib/db-table-datasets";
 import { getShapeDef } from "@/lib/widget-catalog";
 import {
   createCondition,
@@ -30,6 +32,9 @@ import {
   HelpCircle,
   LayoutGrid,
 } from "lucide-react";
+import { formatDbTableLabel } from "@/lib/db-table-datasets";
+import { formatDatasetLabel } from "@/lib/table-relations";
+import type { TableRelation } from "@/lib/sql-query-types";
 import { cn } from "@/lib/utils";
 import {
   getWidgetLayoutWidth,
@@ -39,6 +44,10 @@ import {
 
 interface WidgetDataConfiguratorProps {
   data: SheetData;
+  primaryData?: SheetData;
+  dbDatasets?: Record<string, SheetData> | null;
+  availableTables?: string[];
+  tableRelations?: TableRelation[];
   widget: WidgetConfig;
   onChange: (patch: Partial<WidgetConfig>) => void;
 }
@@ -104,7 +113,15 @@ function Section({
   );
 }
 
-export function WidgetDataConfigurator({ data, widget, onChange }: WidgetDataConfiguratorProps) {
+export function WidgetDataConfigurator({
+  data,
+  primaryData,
+  dbDatasets,
+  availableTables = [],
+  tableRelations,
+  widget,
+  onChange,
+}: WidgetDataConfiguratorProps) {
   const q: WidgetDataQuery = { ...EMPTY_WIDGET_DATA_QUERY, ...widget.dataQuery };
   const shape = widget.visualShape ? getShapeDef(widget.visualShape) : undefined;
   const columns = getColumnOptions(data.columns);
@@ -117,6 +134,9 @@ export function WidgetDataConfigurator({ data, widget, onChange }: WidgetDataCon
   const isRanking = widget.visualShape === "ranking";
   const needsMeasure = needsAggregation && q.aggregation !== "count";
   const selectedColumns = q.displayColumns ?? [];
+
+  const sheetDataForTable = (sourceTable: string) =>
+    resolveWidgetSheetData(primaryData ?? data, dbDatasets, { sourceTable });
 
   const toggleColumn = (key: string) => {
     const next = selectedColumns.includes(key)
@@ -145,6 +165,46 @@ export function WidgetDataConfigurator({ data, widget, onChange }: WidgetDataCon
           className="input-field text-sm"
         />
       </label>
+
+      {availableTables.length > 1 && (
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-700">Sumber tabel</span>
+          <select
+            value={widget.sourceTable ?? availableTables[0] ?? ""}
+            onChange={(e) => {
+              const nextTable = e.target.value;
+              const nextData = sheetDataForTable(nextTable);
+              const allColumnKeys = isTable
+                ? defaultTableDisplayColumns(nextData.columns)
+                : undefined;
+              onChange({
+                sourceTable: nextTable,
+                categoryKey: undefined,
+                valueKey: undefined,
+                dataQuery: {
+                  ...EMPTY_WIDGET_DATA_QUERY,
+                  limit: widget.dataQuery?.limit ?? 12,
+                  ...(isTable
+                    ? {
+                        displayColumns: allColumnKeys,
+                        sort: allColumnKeys?.[0]
+                          ? { columnKey: allColumnKeys[0], direction: "asc" as const }
+                          : null,
+                      }
+                    : {}),
+                },
+              });
+            }}
+            className="input-field text-sm"
+          >
+            {availableTables.map((table) => (
+              <option key={table} value={table}>
+                {formatDatasetLabel(table, tableRelations) || formatDbTableLabel(table)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       {!isForcedFullWidth(widget) && (
         <Section
@@ -249,7 +309,7 @@ export function WidgetDataConfigurator({ data, widget, onChange }: WidgetDataCon
         <Section
           title="Columns to show"
           icon={Table2}
-          hint="Select which fields appear in the table."
+          hint="Pilih kolom yang ditampilkan. Tinggi panel menyesuaikan jumlah baris; tarik handle bawah widget di overview untuk resize manual."
         >
           <div className="flex flex-wrap gap-1.5">
             {allCols.map((c) => {
@@ -278,7 +338,7 @@ export function WidgetDataConfigurator({ data, widget, onChange }: WidgetDataCon
         <Section
           title="Summary row"
           icon={Calculator}
-          hint="Optional footer with average, sum, min, max, or count. Uses all matching rows before the display limit."
+          hint="Optional footer with average, sum, min, max, or count. Calculated from all matching rows, not just the current page."
           defaultOpen={!!q.tableSummary?.enabled}
         >
           <label className="mb-3 flex cursor-pointer items-center gap-2.5 text-xs text-slate-700">
@@ -430,16 +490,18 @@ export function WidgetDataConfigurator({ data, widget, onChange }: WidgetDataCon
 
       {(isRanking || isTable || needsGroupBy) && (
         <Section
-          title="Sort & limit"
+          title={isTable ? "Sort" : "Sort & limit"}
           icon={ArrowUpDown}
           hint={
             isRanking
               ? "Which column to rank by and how many items to show."
-              : "Optional ordering and max rows shown."
+              : isTable
+                ? "Optional column sort order."
+                : "Optional ordering and max rows shown."
           }
           defaultOpen={isRanking}
         >
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className={cn("grid gap-2", isTable ? "sm:grid-cols-2" : "sm:grid-cols-3")}>
             <select
               value={q.sort?.columnKey ?? ""}
               onChange={(e) =>
@@ -477,19 +539,21 @@ export function WidgetDataConfigurator({ data, widget, onChange }: WidgetDataCon
               <option value="desc">High → low</option>
               <option value="asc">Low → high</option>
             </select>
-            <select
-              value={String(q.limit ?? (isTable ? 15 : 12))}
-              onChange={(e) =>
-                onChange(patchQuery(widget, { limit: parseInt(e.target.value, 10) }))
-              }
-              className="input-field text-xs"
-            >
-              {(isTable ? [10, 15, 25, 50, 100, 0] : [5, 10, 12, 20, 50]).map((n) => (
-                <option key={n} value={n}>
-                  {isTable && n === 0 ? "Show all rows" : `Show ${n}`}
-                </option>
-              ))}
-            </select>
+            {!isTable && (
+              <select
+                value={String(q.limit ?? 12)}
+                onChange={(e) =>
+                  onChange(patchQuery(widget, { limit: parseInt(e.target.value, 10) }))
+                }
+                className="input-field text-xs"
+              >
+                {[5, 10, 12, 20, 50].map((n) => (
+                  <option key={n} value={n}>
+                    Show {n}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </Section>
       )}

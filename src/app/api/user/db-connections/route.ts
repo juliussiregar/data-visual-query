@@ -5,6 +5,7 @@ import {
   listUserDbConnections,
   upsertUserDbConnection,
 } from "@/lib/db/user-connections";
+import { databaseTypeLabel, normalizeDatabaseType } from "@/lib/connectors/sql-types";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       id,
+      type,
       name,
       host,
       port,
@@ -40,21 +42,31 @@ export async function POST(request: NextRequest) {
       lastTestMessage,
     } = body ?? {};
 
-    if (!host || !database || !username || !password) {
+    if (!host || !database || !username) {
       return NextResponse.json(
-        { error: "Host, database, username, dan password wajib diisi" },
+        { error: "Host, database, dan username wajib diisi" },
         { status: 400 }
       );
     }
 
+    const isUpdate = typeof id === "string" && id.trim() !== "";
+    if (!isUpdate && !password) {
+      return NextResponse.json(
+        { error: "Password wajib diisi untuk koneksi baru" },
+        { status: 400 }
+      );
+    }
+
+    const dbType = normalizeDatabaseType(type);
     const connection = await upsertUserDbConnection(user.id, {
-      id: typeof id === "string" ? id : undefined,
-      name: String(name ?? `PostgreSQL ${host}`),
+      id: isUpdate ? id : undefined,
+      type: dbType,
+      name: String(name ?? `${databaseTypeLabel(dbType)} ${host}`),
       host: String(host),
       port: parseInt(String(port ?? "5432"), 10) || 5432,
       database: String(database),
       username: String(username),
-      password: String(password),
+      password: typeof password === "string" ? password : undefined,
       ssl: Boolean(ssl),
       schema: String(schema ?? "public"),
       lastTestedAt: typeof lastTestedAt === "string" ? lastTestedAt : undefined,

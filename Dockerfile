@@ -37,7 +37,7 @@ COPY --from=builder /app/docker ./docker
 COPY --from=builder /app/package.json ./package.json
 
 # CLI + scripts for migrate/seed at container start
-RUN npm install --omit=dev --no-save prisma@6.19.3 pg bcryptjs tsx \
+RUN npm install --omit=dev --no-save prisma@6.19.3 pg mysql2 bcryptjs tsx \
   && npm cache clean --force
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
