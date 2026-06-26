@@ -63,6 +63,11 @@ function columnsFromKeys(keys: string[]): ColumnMeta[] {
       "semester",
       "recorded_at",
       "summary_date",
+      "gender",
+      "lunch",
+      "race/ethnicity",
+      "parental level of education",
+      "test preparation course",
     ].map((k) => k.toLowerCase())
   );
   const idKeys = /^(id|student_id|student_code)$/i;
@@ -410,16 +415,16 @@ function testVisualSql(healthRows: Record<string, string>[], gradeRows: Record<s
     iotWithPeak
   );
 
-  const examCols: ColumnMeta[] = [
-    { key: "gender", label: "gender", type: "category" },
-    { key: "race/ethnicity", label: "race/ethnicity", type: "category" },
-    { key: "parental level of education", label: "parental level of education", type: "category" },
-    { key: "lunch", label: "lunch", type: "category" },
-    { key: "test preparation course", label: "test preparation course", type: "category" },
-    { key: "math score", label: "math score", type: "number" },
-    { key: "reading score", label: "reading score", type: "number" },
-    { key: "writing score", label: "writing score", type: "number" },
-  ];
+  const examCols = columnsFromKeys([
+    "gender",
+    "race/ethnicity",
+    "parental level of education",
+    "lunch",
+    "test preparation course",
+    "math score",
+    "reading score",
+    "writing score",
+  ]);
   const examTable = "Students Performance in Exams";
   const examExamples = visualSqlExamplesForColumns(examCols, examTable);
   assert(
