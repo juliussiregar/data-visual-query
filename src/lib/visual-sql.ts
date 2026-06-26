@@ -1,10 +1,9 @@
 import { aggregateData } from "./aggregation";
 import { numericColumns } from "./derived-fields";
-import { parseNumber, roundMetricValue } from "./format";
+import { parseNumber, roundMetricValue, isIdentifierColumn, inferColumnIsCurrency } from "./format";
 import { resolveColumnRef } from "./formula-engine";
 import { applyVisualQuery, type QueryCondition, type VisualQuery } from "./visual-query";
 import type { ChartConfig, ChartDataPoint, ChartSeriesSpec, ChartType, ColumnMeta, SheetData } from "./types";
-import { inferColumnIsCurrency } from "./format";
 
 export type VisualSqlAggregation = "count" | "sum" | "avg" | "min" | "max";
 
@@ -45,7 +44,12 @@ function rowsHaveMeasure(rows: Record<string, string>[], measureKey: string): bo
 function hintForMissingMeasure(expr: string, columns: ColumnMeta[]): string | undefined {
   const measureKey = resolveColumnRef(expr, columns) ?? expr;
   if (columns.some((c) => c.key === measureKey)) return undefined;
-  return `Kolom "${measureKey}" belum ada. Buat di Pengaturan project → Kolom baru (custom), lalu Simpan project.`;
+  const numeric = numericColumns(columns)
+    .filter((c) => !isIdentifierColumn(c))
+    .map((c) => c.key)
+    .slice(0, 5);
+  const numericHint = numeric.length ? ` Kolom numerik di tabel ini: ${numeric.join(", ")}.` : "";
+  return `Kolom "${measureKey}" tidak ada di tabel aktif.${numericHint} Ganti nama kolom, pilih tabel lain (sidebar kanan), atau buat kolom custom lewat Edit Widget → Kolom dihitung.`;
 }
 
 function hintForEmptyMeasure(
@@ -162,7 +166,7 @@ export function parseVisualSql(input: string): { query?: VisualSqlQuery; error?:
   if (!match) {
     return {
       error:
-        "Format: SELECT kolom, AVG(nilai) FROM * [WHERE Region = 'A'] GROUP BY Region [ORDER BY avg_nilai DESC] [LIMIT 12]",
+        "Format: SELECT kolom, AVG(ukuran) FROM * [WHERE status = 'A'] GROUP BY kolom [ORDER BY avg_ukuran DESC] [LIMIT 12]",
     };
   }
 
@@ -414,6 +418,12 @@ function findColumn(columns: ColumnMeta[], ...names: string[]): string | null {
   return null;
 }
 
+function measureColumn(columns: ColumnMeta[]): string | null {
+  const numbers = numericColumns(columns);
+  const metric = numbers.find((c) => !isIdentifierColumn(c));
+  return metric?.key ?? numbers[0]?.key ?? null;
+}
+
 function firstDimension(columns: ColumnMeta[]): string | null {
   const preferred = findColumn(
     columns,
@@ -423,55 +433,74 @@ function firstDimension(columns: ColumnMeta[]): string | null {
     "metric",
     "device_code",
     "category",
-    "kelas"
+    "kelas",
+    "status"
   );
   if (preferred) return preferred;
 
   const dim = columns.find((c) => {
     if (c.type !== "category" && c.semanticRole !== "dimension") return false;
     const key = c.key.toLowerCase();
-    if (key === "id" || key.endsWith("_id")) return false;
+    if (key === "id") return false;
     return true;
   });
-  return dim?.key ?? null;
+  if (dim) return dim.key;
+
+  const textDim = columns.find(
+    (c) =>
+      (c.type === "category" || c.type === "text") &&
+      c.key !== "id" &&
+      !isIdentifierColumn(c)
+  );
+  if (textDim) return textDim.key;
+
+  const fk = columns.find((c) => {
+    const key = c.key.toLowerCase();
+    return key.endsWith("_id") && key !== "id";
+  });
+  return fk?.key ?? null;
 }
 
 /** Contoh query SQL-like dari kolom tabel aktif (tanpa asumsi nama kolom khusus). */
 export function visualSqlExamplesForColumns(columns: ColumnMeta[]): string[] {
-  if (!columns.length) return [...VISUAL_SQL_EXAMPLES];
+  if (!columns.length) return [];
 
-  const group =
-    firstDimension(columns) ??
-    findColumn(columns, "region", "zone", "jurusan", "metric", "device_code", "category");
-  const numbers = numericColumns(columns);
-  const measure = numbers[0]?.key;
+  const group = firstDimension(columns);
+  const measure = measureColumn(columns);
 
-  if (!group || !measure) {
-    return [...VISUAL_SQL_EXAMPLES];
+  if (group && measure) {
+    const examples = [`SELECT ${group}, AVG(${measure}) FROM * GROUP BY ${group}`];
+
+    const numbers = numericColumns(columns).filter((c) => !isIdentifierColumn(c));
+    if (numbers.length >= 3) {
+      const multi = numbers
+        .slice(0, 3)
+        .map((c) => `AVG(${c.key})`)
+        .join(", ");
+      examples.push(`SELECT ${group}, ${multi} FROM * GROUP BY ${group}`);
+    }
+
+    const sampleCat = columns.find((c) => c.type === "category" && c.sampleValues?.[0])?.sampleValues?.[0];
+    if (sampleCat) {
+      examples.push(
+        `SELECT ${group}, AVG(${measure}) FROM * WHERE ${group} = '${sampleCat}' GROUP BY ${group}`
+      );
+    }
+
+    return examples;
   }
 
-  const examples = [`SELECT ${group}, AVG(${measure}) FROM * GROUP BY ${group}`];
-
-  if (numbers.length >= 3) {
-    const multi = numbers
-      .slice(0, 3)
-      .map((c) => `AVG(${c.key})`)
-      .join(", ");
-    examples.push(`SELECT ${group}, ${multi} FROM * GROUP BY ${group}`);
+  if (measure) {
+    return [`SELECT ${group ?? "id"}, SUM(${measure}) FROM * GROUP BY ${group ?? "id"}`];
   }
 
-  const sampleCat = columns.find((c) => c.type === "category" && c.sampleValues?.[0])?.sampleValues?.[0];
-  if (sampleCat) {
-    examples.push(
-      `SELECT ${group}, AVG(${measure}) FROM * WHERE ${group} = '${sampleCat}' GROUP BY ${group}`
-    );
-  }
-
-  return examples;
+  return [];
 }
 
 export function defaultVisualSqlForColumns(columns: ColumnMeta[]): string {
-  return visualSqlExamplesForColumns(columns)[0] ?? VISUAL_SQL_EXAMPLES[0];
+  const examples = visualSqlExamplesForColumns(columns);
+  if (examples[0]) return examples[0];
+  return "SELECT COUNT(*) FROM *";
 }
 
 function escapeRegExp(value: string): string {

@@ -116,7 +116,8 @@ export function QueryEditorPanel({
   };
 
   const parsed = parseVisualSql(sql);
-  const exampleHint = examples[0] ?? "SELECT kolom, AVG(nilai) FROM * GROUP BY kolom";
+  const exampleHint =
+    examples[0] ?? "Pilih kolom di panel kanan atau tulis query sesuai tabel aktif";
 
   const canAddChart = Boolean(result?.chart && !result?.error);
   const canAddTable = Boolean(result && !result.error && result.rows.length > 0);
