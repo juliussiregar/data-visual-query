@@ -92,6 +92,7 @@ import {
   syncProjectToUrl,
   updateProject,
 } from "@/lib/project-storage";
+import { getViewFromUrl, syncViewToUrl } from "@/lib/view-url";
 import { clearWorkspaceLocalStorage } from "@/lib/workspace-storage";
 import {
   clearLegacyLocalStorage,
@@ -131,7 +132,7 @@ export function DashboardApp() {
   const [selectedDataTable, setSelectedDataTable] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<ViewId>("overview");
+  const [activeView, setActiveView] = useState<ViewId>(() => getViewFromUrl() ?? "overview");
   const [filters, setFilters] = useState<Filters>({});
   const [lastUrl, setLastUrl] = useState("");
   const [sheetUrls, setSheetUrls] = useState<string[]>([]);
@@ -185,6 +186,10 @@ export function DashboardApp() {
   const perms = rolePermissions(userRole);
   const { toast } = useToast();
 
+  useEffect(() => {
+    syncViewToUrl(activeView);
+  }, [activeView]);
+
   const resetDashboardState = useCallback(() => {
     setSheetData(null);
     setDbDatasets(null);
@@ -211,6 +216,7 @@ export function DashboardApp() {
     setProjects([]);
     setLoadingMessage(null);
     syncProjectToUrl(null);
+    syncViewToUrl("overview");
   }, []);
 
   useEffect(() => {
@@ -303,7 +309,6 @@ export function DashboardApp() {
         setDataScope(null);
 
         logAuditClient("sheet_load", `Loaded ${unique.length} sheet(s)`, { rows: json.rows?.length }, userRole);
-        setActiveView("overview");
         setHeroCollapsed(true);
         await initLayout(
           json,
@@ -352,9 +357,6 @@ export function DashboardApp() {
           false,
           resolveLayoutForReload(project)
         );
-        setActiveView("overview");
-      } else {
-        setActiveView("overview");
       }
       setHeroCollapsed(true);
     },
@@ -874,7 +876,6 @@ export function DashboardApp() {
         const project = (await fetchProject(projectId)) ?? fromList;
         if (project) {
           openProject(project);
-          setActiveView("overview");
           setHeroCollapsed(true);
           if (projectHasSource(project)) {
             setLoadingMessage("Memuat data…");
@@ -885,7 +886,6 @@ export function DashboardApp() {
         syncProjectToUrl(null);
       }
 
-      setActiveView("overview");
       setHeroCollapsed(true);
       if (list.length === 0) {
         setShowCreateDialog(true);

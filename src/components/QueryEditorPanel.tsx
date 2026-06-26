@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Play, Sparkles, BarChart3, Table2, LayoutGrid } from "lucide-react";
 import type { DerivedField } from "@/lib/derived-fields";
-import { sheetDataWithDerivedFields } from "@/lib/derived-fields";
+import { sheetDataWithDerivedFields, derivedFieldsForTable } from "@/lib/derived-fields";
 import type { SheetData } from "@/lib/types";
 import {
   defaultVisualSqlForColumns,
   executeVisualSql,
   parseVisualSql,
+  normalizeVisualSql,
   toggleVisualSqlColumn,
   visualSqlExamplesForColumns,
   chartConfigFromVisualSqlResult,
@@ -52,19 +53,19 @@ export function QueryEditorPanel({
   onAddToDashboard,
   className,
 }: QueryEditorPanelProps) {
+  const tableDerivedFields = useMemo(
+    () => derivedFieldsForTable(derivedFields, data.columns),
+    [derivedFields, data.columns]
+  );
+
   const queryData = useMemo(
-    () => sheetDataWithDerivedFields(data, derivedFields),
-    [data, derivedFields]
+    () => sheetDataWithDerivedFields(data, tableDerivedFields),
+    [data, tableDerivedFields]
   );
 
   const derivedKeys = useMemo(
-    () => new Set(derivedFields.map((f) => f.key)),
-    [derivedFields]
-  );
-
-  const examples = useMemo(
-    () => visualSqlExamplesForColumns(queryData.columns),
-    [queryData.columns]
+    () => new Set(tableDerivedFields.map((f) => f.key)),
+    [tableDerivedFields]
   );
 
   const schemaTables = useMemo(() => {
@@ -90,15 +91,29 @@ export function QueryEditorPanel({
   }, [availableTables, dbDatasets, activeTable, tableRelations, queryData]);
 
   const tableScope = activeTable || queryData.dataset?.name || "default";
+  const activeTableKey = activeTable || schemaTables[0]?.key || "";
 
-  const [sql, setSql] = useState(() => defaultVisualSqlForColumns(queryData.columns));
+  const sqlTableRef =
+    activeTableKey && activeTableKey !== "default" ? activeTableKey : undefined;
+
+  const examples = useMemo(
+    () => visualSqlExamplesForColumns(queryData.columns, sqlTableRef),
+    [queryData.columns, sqlTableRef]
+  );
+
+  const otherTables = useMemo(() => {
+    if (!activeTableKey || availableTables.length <= 1) return [];
+    return schemaTables.filter((t) => t.key !== activeTableKey);
+  }, [activeTableKey, availableTables.length, schemaTables]);
+
+  const [sql, setSql] = useState(() => defaultVisualSqlForColumns(queryData.columns, sqlTableRef));
   const [result, setResult] = useState<VisualSqlResult | null>(null);
   const [chartType, setChartType] = useState<ChartType>("bar");
 
   useEffect(() => {
-    setSql(defaultVisualSqlForColumns(queryData.columns));
+    setSql(defaultVisualSqlForColumns(queryData.columns, sqlTableRef));
     setResult(null);
-  }, [tableScope, queryData.columns]);
+  }, [tableScope, queryData.columns, sqlTableRef]);
 
   const previewChart = useMemo(() => {
     if (!result?.chart) return null;
@@ -106,18 +121,27 @@ export function QueryEditorPanel({
   }, [result, queryData.columns, chartType]);
 
   const runQuery = () => {
-    const executed = executeVisualSql(queryData, sql);
+    const normalized = normalizeVisualSql(sql, queryData.columns, sqlTableRef);
+    if (normalized !== sql.trim().replace(/\s+/g, " ")) {
+      setSql(normalized);
+    }
+    const executed = executeVisualSql(queryData, normalized, queryData.columns, sqlTableRef);
     setResult(executed);
   };
 
+  const normalizedSql = useMemo(
+    () => normalizeVisualSql(sql, queryData.columns, sqlTableRef),
+    [sql, queryData.columns, sqlTableRef]
+  );
+
   const handleToggleColumn = (columnKey: string, select: boolean) => {
-    setSql((prev) => toggleVisualSqlColumn(prev, columnKey, queryData.columns, select));
+    setSql((prev) =>
+      toggleVisualSqlColumn(prev, columnKey, queryData.columns, select, sqlTableRef)
+    );
     setResult(null);
   };
 
-  const parsed = parseVisualSql(sql);
-  const exampleHint =
-    examples[0] ?? "Pilih kolom di panel kanan atau tulis query sesuai tabel aktif";
+  const parsed = parseVisualSql(normalizedSql);
 
   const canAddChart = Boolean(result?.chart && !result?.error);
   const canAddTable = Boolean(result && !result.error && result.rows.length > 0);
@@ -127,16 +151,22 @@ export function QueryEditorPanel({
     <div className={cn("flex flex-col gap-4 lg:flex-row lg:items-start", className)}>
       <div className="min-w-0 flex-1 space-y-4">
         <div className="rounded-xl border border-indigo-200/80 bg-indigo-50/40 p-4">
-          <div className="mb-2 flex items-center gap-2">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
             <Sparkles className="h-4 w-4 text-indigo-600" />
             <h3 className="text-sm font-semibold text-slate-900">Query editor (SQL-like)</h3>
           </div>
-          <p className="mb-3 text-[11px] text-slate-600">
-            Contoh untuk tabel ini:{" "}
-            <code className="rounded bg-white px-1 py-0.5 text-[10px]">{exampleHint}</code>
-            {" · "}
-            Atau pilih kolom di panel kanan.
-          </p>
+          <div className="mb-3">
+            {otherTables.length > 0 && (
+              <p className="text-[11px] leading-relaxed text-slate-500">
+                Tabel lain: {otherTables.map((t) => t.label).join(", ")} — pilih di Schema explorer.
+              </p>
+            )}
+            {!otherTables.length && (
+              <p className="text-[11px] text-slate-500">
+                Klik kolom di panel kanan untuk menyusun query.
+              </p>
+            )}
+          </div>
           <textarea
             value={sql}
             onChange={(e) => {
@@ -254,7 +284,7 @@ export function QueryEditorPanel({
       <QuerySchemaSidebar
         className="w-full shrink-0 lg:w-56 xl:w-64"
         columns={queryData.columns}
-        sql={sql}
+        sql={normalizedSql}
         onToggleColumn={handleToggleColumn}
         tables={schemaTables}
         activeTable={activeTable || schemaTables[0]?.key}

@@ -282,9 +282,15 @@ function aggregateColumnExpr(
 
 export function formulaReferences(formula: string): string[] {
   const refs: string[] = [];
+  let remainder = formula;
+
   const bracket = formula.match(/\[([^\]]+)\]/g);
-  if (bracket) refs.push(...bracket.map((b) => b.slice(1, -1).trim()));
-  const ids = formula.match(/\b[A-Za-z_][\w]*\b/g) ?? [];
+  if (bracket) {
+    refs.push(...bracket.map((b) => b.slice(1, -1).trim()));
+    remainder = formula.replace(/\[([^\]]+)\]/g, " ");
+  }
+
+  const ids = remainder.match(/\b[A-Za-z_][\w]*\b/g) ?? [];
   for (const id of ids) {
     const u = id.toUpperCase();
     if (["SUM", "AVG", "MIN", "MAX", "COUNT"].includes(u)) continue;

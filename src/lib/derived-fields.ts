@@ -273,13 +273,24 @@ export function applyDerivedFields(data: SheetData, fields: DerivedField[]): She
   return { ...data, rows, columns };
 }
 
+/** Kolom dihitung yang rumusnya cocok dengan schema tabel ini. */
+export function derivedFieldsForTable(
+  fields: DerivedField[] | undefined,
+  columns: ColumnMeta[]
+): DerivedField[] {
+  if (!fields?.length) return [];
+  return fields.filter((f) => isFormulaCompatibleWithColumns(f.formula, columns));
+}
+
 /** Terapkan kolom turunan project ke sheet data (tidak mengubah DB sumber). */
 export function sheetDataWithDerivedFields(
   data: SheetData,
   fields?: DerivedField[]
 ): SheetData {
   if (!fields?.length) return data;
-  return applyDerivedFields(data, fields);
+  const compatible = derivedFieldsForTable(fields, data.columns);
+  if (!compatible.length) return data;
+  return applyDerivedFields(data, compatible);
 }
 
 export interface DerivedFieldValidationPreview {
