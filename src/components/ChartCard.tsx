@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { ChartConfig, ChartType } from "@/lib/types";
 import { ALL_CHART_TYPES } from "@/lib/types";
 import { ChartRenderer } from "./ChartRenderer";
@@ -19,6 +19,8 @@ interface ChartCardProps {
   /** select = dropdown (gallery); chips = compact buttons (overview widgets) */
   pickerStyle?: "select" | "chips";
   onDrillDown?: (value: string) => void;
+  /** Tombol aksi tambahan di header (mis. Edit di overview widget) */
+  headerActions?: ReactNode;
 }
 
 export function ChartCard({
@@ -31,6 +33,7 @@ export function ChartCard({
   compactPicker = false,
   pickerStyle = "select",
   onDrillDown,
+  headerActions,
 }: ChartCardProps) {
   const [internalType, setInternalType] = useState<ChartType>(chart.type);
   const [expanded, setExpanded] = useState(defaultLarge ?? false);
@@ -109,6 +112,7 @@ export function ChartCard({
                 ))}
               </select>
             ))}
+          {headerActions}
           <button
             type="button"
             onClick={() => setExpanded(!expanded)}

@@ -135,6 +135,24 @@ export function OverviewDashboard({
     toast("Table exported to CSV");
   };
 
+  const renderWidgetEditButton = (widget: WidgetConfig, className?: string) => (
+    <button
+      type="button"
+      onClick={() => openEditWidget(widget.id)}
+      className={cn(
+        "flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700",
+        className
+      )}
+      aria-label={`Edit ${widget.title ?? "widget"}`}
+    >
+      <Pencil className="h-3 w-3" />
+      Edit
+    </button>
+  );
+
+  const widgetUsesInlineEdit = (shape?: WidgetVisualShape) =>
+    shape === "table" || shape === "bar" || shape === "line" || shape === "donut";
+
   const renderWidgetContent = (
     widget: WidgetConfig,
     opts?: { compactStat?: boolean }
@@ -172,6 +190,7 @@ export function OverviewDashboard({
             controlledType={widget.chartType ?? chart.type}
             showTypePicker
             pickerStyle="select"
+            headerActions={renderWidgetEditButton(widget)}
             onTypeChange={(chartType: ChartType) => {
               handleUpdateWidget(widget.id, { chartType });
               toast("Chart type saved");
@@ -215,14 +234,7 @@ export function OverviewDashboard({
                     <Download className="h-3 w-3" />
                     CSV
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => openEditWidget(widget.id)}
-                    className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
-                  >
-                    <Pencil className="h-3 w-3" />
-                    Edit
-                  </button>
+                  {renderWidgetEditButton(widget)}
                 </div>
               </div>
             }
@@ -264,6 +276,7 @@ export function OverviewDashboard({
     const isDragging = draggingId === widget.id;
     const isDropTarget = dropTargetId === widget.id && draggingId !== widget.id;
     const isTableWidget = widget.visualShape === "table";
+    const usesInlineEdit = widgetUsesInlineEdit(widget.visualShape);
 
     return (
       <div
@@ -310,7 +323,7 @@ export function OverviewDashboard({
         >
           <GripVertical className="h-3.5 w-3.5" />
         </div>
-        {!isTableWidget && (
+        {!usesInlineEdit && (
           <button
             type="button"
             onClick={() => openEditWidget(widget.id)}

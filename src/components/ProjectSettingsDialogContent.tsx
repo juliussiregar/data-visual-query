@@ -16,19 +16,20 @@ import type { Project } from "@/lib/project-types";
 import { connectionToApiPayload, fetchDbConnections, removeDbConnection } from "@/lib/datasource-storage";
 import { deleteProject, updateProject } from "@/lib/project-storage";
 import type { ProbeResult, SourceType } from "@/lib/project-source-probe";
-import { probeDatabaseTable, probeSheetUrl } from "@/lib/project-source-probe";
+import {
+  describeProjectSavedSource,
+  probeDatabaseTable,
+  probeSheetUrl,
+  projectSourceType,
+} from "@/lib/project-source-probe";
 import { resolveProjectDbTables } from "@/lib/db-table-datasets";
 import { DatabaseConnectionQuickForm } from "./DatabaseConnectionQuickForm";
 import { DbTableMultiSelect } from "./DbTableMultiSelect";
 import { ProjectSourceVerify } from "./ProjectSourceVerify";
 import { ProjectTableRelationsEditor } from "./ProjectTableRelationsEditor";
-import { DerivedFieldsEditor } from "./DerivedFieldsEditor";
 import { formatDbTableLabel } from "@/lib/db-table-datasets";
-import { formatDatasetLabel } from "@/lib/table-relations";
 import { ConfirmDialog } from "./ConfirmDialog";
-import type { DerivedField } from "@/lib/derived-fields";
 import type { TableRelation } from "@/lib/sql-query-types";
-import type { ColumnMeta } from "@/lib/types";
 import { useToast } from "./ToastProvider";
 import { DatabaseConnectionCard } from "./DatabaseConnectionCard";
 import { cn } from "@/lib/utils";
@@ -44,7 +45,18 @@ interface ProjectSettingsDialogContentProps {
   onDeleted?: (projectId: string) => void;
   onLoad: () => void;
   loading?: boolean;
-  sheetColumns?: ColumnMeta[];
+}
+
+function syncStateFromProject(project: Project) {
+  const isSheet = project.sheetUrls.length > 0;
+  return {
+    projectName: project.name,
+    sourceType: (isSheet ? "sheet" : "database") as SourceType,
+    sheetUrl: project.sheetUrls[0] ?? "",
+    selectedDbId: project.activeDbConnectionId ?? "",
+    dbTables: resolveProjectDbTables(project),
+    tableRelations: project.tableRelations ?? [],
+  };
 }
 
 function SettingsSection({
@@ -78,20 +90,15 @@ export function ProjectSettingsDialogContent({
   onDeleted,
   onLoad,
   loading,
-  sheetColumns,
 }: ProjectSettingsDialogContentProps) {
-  const [projectName, setProjectName] = useState(project.name);
+  const initial = syncStateFromProject(project);
+  const [projectName, setProjectName] = useState(initial.projectName);
   const [dbConnections, setDbConnections] = useState<DatabaseConnectionProfile[]>([]);
-  const [sourceType, setSourceType] = useState<SourceType>(
-    project.sheetUrls.length > 0 ? "sheet" : "database"
-  );
-  const [sheetUrl, setSheetUrl] = useState(project.sheetUrls[0] ?? "");
-  const [selectedDbId, setSelectedDbId] = useState(project.activeDbConnectionId ?? "");
-  const [dbTables, setDbTables] = useState<string[]>(resolveProjectDbTables(project));
-  const [tableRelations, setTableRelations] = useState<TableRelation[]>(
-    project.tableRelations ?? []
-  );
-  const [derivedFields, setDerivedFields] = useState<DerivedField[]>(project.derivedFields ?? []);
+  const [sourceType, setSourceType] = useState<SourceType>(initial.sourceType);
+  const [sheetUrl, setSheetUrl] = useState(initial.sheetUrl);
+  const [selectedDbId, setSelectedDbId] = useState(initial.selectedDbId);
+  const [dbTables, setDbTables] = useState<string[]>(initial.dbTables);
+  const [tableRelations, setTableRelations] = useState<TableRelation[]>(initial.tableRelations);
   const [tables, setTables] = useState<{ schema: string; name: string; fullName: string }[]>([]);
   const [loadingTables, setLoadingTables] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -103,27 +110,36 @@ export function ProjectSettingsDialogContent({
     null
   );
   const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget>(null);
+  const [pendingSourceSwitch, setPendingSourceSwitch] = useState<SourceType | null>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const { toast } = useToast();
 
+  const savedSourceType = projectSourceType(project);
+
   useEffect(() => {
-    setProjectName(project.name);
-    setDbTables(resolveProjectDbTables(project));
-    setTableRelations(project.tableRelations ?? []);
-    setDerivedFields(project.derivedFields ?? []);
-  }, [project.id, project.name, project.updatedAt]);
+    const snap = syncStateFromProject(project);
+    setProjectName(snap.projectName);
+    setSourceType(snap.sourceType);
+    setSheetUrl(snap.sheetUrl);
+    setSelectedDbId(snap.selectedDbId);
+    setDbTables(snap.dbTables);
+    setTableRelations(snap.tableRelations);
+    setProbeResult(null);
+    setSaveError(null);
+    setPendingSourceSwitch(null);
+    setShowAddConnection(false);
+    setEditingConnection(null);
+  }, [project.id, project.updatedAt]);
 
   useEffect(() => {
     void fetchDbConnections().then((list) => {
       setDbConnections(list);
       if (list.length === 0) {
         setShowAddConnection(true);
-        return;
       }
-      if (!selectedDbId && list[0]) setSelectedDbId(list[0].id);
     });
-  }, [selectedDbId]);
+  }, [project.id]);
 
   const selectedDb = dbConnections.find((c) => c.id === selectedDbId) ?? null;
 
@@ -152,6 +168,30 @@ export function ProjectSettingsDialogContent({
     }
     void fetchTables(selectedDb);
   }, [sourceType, selectedDb, showAddConnection, editingConnection, fetchTables]);
+
+  const requestSourceType = (next: SourceType) => {
+    if (next === sourceType) return;
+    setPendingSourceSwitch(next);
+  };
+
+  const applySourceTypeSwitch = () => {
+    if (!pendingSourceSwitch) return;
+    setSourceType(pendingSourceSwitch);
+    if (pendingSourceSwitch === "sheet") {
+      setDbTables([]);
+      setTableRelations([]);
+      if (!sheetUrl.trim() && project.sheetUrls[0]) {
+        setSheetUrl(project.sheetUrls[0]);
+      }
+    } else {
+      if (!selectedDbId && project.activeDbConnectionId) {
+        setSelectedDbId(project.activeDbConnectionId);
+        setDbTables(resolveProjectDbTables(project));
+      }
+    }
+    setPendingSourceSwitch(null);
+    setProbeResult(null);
+  };
 
   const buildRelationsPatch = (resolvedTables: string[], relations: TableRelation[]) => {
     const hadRelations = (project.tableRelations?.length ?? 0) > 0;
@@ -203,7 +243,7 @@ export function ProjectSettingsDialogContent({
       return;
     }
 
-    const patch = { name: trimmedName, derivedFields, ...sourcePatch };
+    const patch = { name: trimmedName, ...sourcePatch };
 
     try {
       const updated = await updateProject(project.id, patch);
@@ -309,18 +349,35 @@ export function ProjectSettingsDialogContent({
           }
         : null;
 
-  const derivedSourceLabel = useMemo(() => {
-    const table = dbTables[0] ?? project.activeDbTable;
-    if (table) {
-      return formatDatasetLabel(table, tableRelations) || formatDbTableLabel(table);
-    }
-    if (project.sheetUrls[0]) return "Google Sheet";
-    return undefined;
-  }, [dbTables, project.activeDbTable, project.sheetUrls, tableRelations]);
+  const savedSourceSummary = useMemo(
+    () => describeProjectSavedSource(project, dbConnections),
+    [project, dbConnections]
+  );
+
+  const sourceFormDirty = savedSourceType !== null && sourceType !== savedSourceType;
 
   return (
     <>
       <div className="space-y-4">
+        <div className="rounded-xl border border-indigo-200/80 bg-indigo-50/50 px-3 py-2.5 text-[11px] leading-relaxed text-indigo-950">
+          <p>
+            <span className="font-semibold">Mengedit project:</span> {project.name}
+          </p>
+          <p className="mt-1 text-indigo-800">
+            <span className="font-semibold">Sumber tersimpan:</span> {savedSourceSummary}
+          </p>
+          {sourceFormDirty && (
+            <p className="mt-1 text-amber-800">
+              Form menampilkan{" "}
+              <span className="font-medium">
+                {sourceType === "sheet" ? "Google Sheet" : "PostgreSQL / MySQL"}
+              </span>{" "}
+              — belum disimpan. Klik <span className="font-medium">Simpan perubahan</span> untuk
+              menerapkan.
+            </p>
+          )}
+        </div>
+
         <SettingsSection title="Identitas project" description="Nama yang tampil di daftar project">
           <input
             value={projectName}
@@ -337,7 +394,7 @@ export function ProjectSettingsDialogContent({
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => setSourceType("sheet")}
+              onClick={() => requestSourceType("sheet")}
               className={cn(
                 "flex items-center justify-center gap-2 rounded-xl border py-3 text-xs font-medium transition-colors",
                 sourceType === "sheet"
@@ -350,7 +407,7 @@ export function ProjectSettingsDialogContent({
             </button>
             <button
               type="button"
-              onClick={() => setSourceType("database")}
+              onClick={() => requestSourceType("database")}
               className={cn(
                 "flex items-center justify-center gap-2 rounded-xl border py-3 text-xs font-medium transition-colors",
                 sourceType === "database"
@@ -456,13 +513,6 @@ export function ProjectSettingsDialogContent({
           </div>
         </SettingsSection>
 
-        <DerivedFieldsEditor
-          fields={derivedFields}
-          onChange={setDerivedFields}
-          columns={sheetColumns ?? []}
-          sourceLabel={derivedSourceLabel}
-        />
-
         {saveError && (
           <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700">
             <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -553,6 +603,18 @@ export function ProjectSettingsDialogContent({
           confirmLabel={confirmCopy.confirmLabel}
           variant="danger"
           loading={confirmLoading}
+        />
+      )}
+
+      {pendingSourceSwitch && (
+        <ConfirmDialog
+          open
+          onClose={() => setPendingSourceSwitch(null)}
+          onConfirm={applySourceTypeSwitch}
+          title="Ganti jenis sumber data?"
+          description={`Project akan beralih dari ${sourceType === "sheet" ? "Google Sheet" : "database"} ke ${pendingSourceSwitch === "sheet" ? "Google Sheet" : "PostgreSQL / MySQL"}. Perubahan baru berlaku setelah Anda klik Simpan perubahan.`}
+          confirmLabel="Ya, ganti"
+          variant="default"
         />
       )}
     </>

@@ -18,6 +18,7 @@ import {
   buildSumFormula,
   columnKeysFromFormula,
   createDerivedField,
+  formatColumnRefForFormula,
   isFormulaCompatibleWithColumns,
   isSimpleSumFormula,
   normalizeDerivedFields,
@@ -212,6 +213,35 @@ function testDerivedFields(healthRows: Record<string, string>[], gradeRows: Reco
     "tugas - ulangan"
   );
   assert("Build rumus penjumlahan", buildSumFormula(["a", "b"]) === "a + b", buildSumFormula(["a", "b"]));
+  assert(
+    "Build rumus kolom dengan spasi",
+    buildSumFormula(["math score", "reading score"]) === "[math score] + [reading score]",
+    buildSumFormula(["math score", "reading score"])
+  );
+  assert(
+    "Format ref kolom dengan spasi",
+    formatColumnRefForFormula("math score") === "[math score]",
+    formatColumnRefForFormula("math score")
+  );
+
+  const sheetRows = [
+    { "math score": "72", "reading score": "80", "writing score": "68" },
+    { "math score": "90", "reading score": "85", "writing score": "88" },
+  ];
+  const legacyFormula = "math score + reading score + writing score";
+  const spacedDerived = applyDerivedFields(sheetFromRows(sheetRows), [
+    createDerivedField("Total 3 kolom", legacyFormula, "total_3_kolom"),
+  ]);
+  assert(
+    "Google Sheet: rumus legacy kolom ber-spasi",
+    spacedDerived.rows[0]?.total_3_kolom === "220",
+    String(spacedDerived.rows[0]?.total_3_kolom)
+  );
+  assert(
+    "Google Sheet: baris kedua total",
+    spacedDerived.rows[1]?.total_3_kolom === "263",
+    String(spacedDerived.rows[1]?.total_3_kolom)
+  );
 
   const eduFields = [createDerivedField("IPA", "tugas + fisika + biologi", "ipa")];
   const withEduDerived = applyDerivedFields(gradeSheet, eduFields);

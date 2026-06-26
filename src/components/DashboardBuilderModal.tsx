@@ -22,7 +22,7 @@ import type { DashboardLayout, SheetData, WidgetConfig, WidgetVisualShape } from
 import { getVisibleWidgets, widgetLabel } from "@/lib/layout";
 import { WIDGET_SHAPES, WIDGET_SHAPE_GROUPS, createWidgetFromShape } from "@/lib/widget-catalog";
 import { LayoutSilhouettePreview, ShapeSilhouette } from "./WidgetSilhouette";
-import { WidgetDataConfigurator } from "./WidgetDataConfigurator";
+import { WidgetDataConfigurator, type WidgetDataConfiguratorHandle } from "./WidgetDataConfigurator";
 import { WidgetPreview } from "./WidgetPreview";
 import { MultiSheetPanel } from "./MultiSheetPanel";
 import type { LayoutSyncStatus } from "@/hooks/useLayoutAutoSave";
@@ -100,6 +100,7 @@ function BuilderDialog({
   const [editingWidget, setEditingWidget] = useState<WidgetConfig | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const configScrollRef = useRef<HTMLDivElement>(null);
+  const configuratorRef = useRef<WidgetDataConfiguratorHandle>(null);
   const { toast } = useToast();
 
   const reportValidationError = (error: string) => {
@@ -229,9 +230,19 @@ function BuilderDialog({
     };
   };
 
-  const commitWidget = () => {
+  const commitWidget = async () => {
     if (!editingWidget) return;
-    const result = mergeEditingWidget(draft, editingWidget);
+    let widgetToSave = editingWidget;
+    const pending = await configuratorRef.current?.commitPendingDerivedField();
+    if (pending?.error) {
+      reportValidationError(pending.error);
+      return;
+    }
+    if (pending?.widgetPatch) {
+      widgetToSave = { ...editingWidget, ...pending.widgetPatch };
+      setEditingWidget(widgetToSave);
+    }
+    const result = mergeEditingWidget(draft, widgetToSave);
     if ("error" in result) {
       reportValidationError(result.error);
       return;
@@ -242,10 +253,20 @@ function BuilderDialog({
     cancelWizard();
   };
 
-  const saveAndClose = () => {
+  const saveAndClose = async () => {
     let finalDraft = draft;
     if (wizardMode && wizardStep === 2 && editingWidget) {
-      const result = mergeEditingWidget(draft, editingWidget);
+      let widgetToSave = editingWidget;
+      const pending = await configuratorRef.current?.commitPendingDerivedField();
+      if (pending?.error) {
+        reportValidationError(pending.error);
+        return;
+      }
+      if (pending?.widgetPatch) {
+        widgetToSave = { ...editingWidget, ...pending.widgetPatch };
+        setEditingWidget(widgetToSave);
+      }
+      const result = mergeEditingWidget(draft, widgetToSave);
       if ("error" in result) {
         reportValidationError(result.error);
         return;
@@ -478,6 +499,7 @@ function BuilderDialog({
                       </div>
                     )}
                     <WidgetDataConfigurator
+                      ref={configuratorRef}
                       data={dataForWidget(editingWidget)}
                       primaryData={data}
                       dbDatasets={dbDatasets}

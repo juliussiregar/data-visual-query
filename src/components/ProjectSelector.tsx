@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, FolderKanban, Plus, Settings, Trash2 } from "lucide-react";
+import { ChevronDown, FolderKanban, Pencil, Plus, Settings, Trash2 } from "lucide-react";
 import type { Project } from "@/lib/project-types";
 import { deleteProject } from "@/lib/project-storage";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -14,6 +14,7 @@ interface ProjectSelectorProps {
   onSelect: (project: Project) => void;
   onCreate: () => void;
   onSettings?: () => void;
+  onEdit?: (project: Project) => void;
   onDeleted?: (projectId: string) => void;
   className?: string;
 }
@@ -24,6 +25,7 @@ export function ProjectSelector({
   onSelect,
   onCreate,
   onSettings,
+  onEdit,
   onDeleted,
   className,
 }: ProjectSelectorProps) {
@@ -120,22 +122,46 @@ export function ProjectSelector({
                       <FolderKanban className="h-3.5 w-3.5 shrink-0 opacity-60" />
                       <span className="truncate">{p.name}</span>
                     </button>
-                    {onDeleted && (
-                      <button
-                        type="button"
-                        title={`Hapus ${p.name}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPendingDelete(p);
-                        }}
-                        className={cn(
-                          "mr-1 shrink-0 rounded-md p-1.5 text-slate-300 transition-all",
-                          "hover:bg-red-50 hover:text-red-600",
-                          "opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                    {(onEdit || onDeleted) && (
+                      <div className="mr-1 flex shrink-0 items-center gap-0.5">
+                        {onEdit && (
+                          <button
+                            type="button"
+                            title={`Edit ${p.name}`}
+                            aria-label={`Edit ${p.name}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpen(false);
+                              onEdit(p);
+                            }}
+                            className={cn(
+                              "rounded-md p-1.5 text-slate-300 transition-all",
+                              "hover:bg-indigo-50 hover:text-indigo-700",
+                              "opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                            )}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
                         )}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                        {onDeleted && (
+                          <button
+                            type="button"
+                            title={`Hapus ${p.name}`}
+                            aria-label={`Hapus ${p.name}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPendingDelete(p);
+                            }}
+                            className={cn(
+                              "rounded-md p-1.5 text-slate-300 transition-all",
+                              "hover:bg-red-50 hover:text-red-600",
+                              "opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                            )}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 ))
