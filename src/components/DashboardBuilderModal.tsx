@@ -29,6 +29,8 @@ import type { LayoutSyncStatus } from "@/hooks/useLayoutAutoSave";
 import { validateWidgetConfig } from "@/lib/widget-data";
 import type { TableRelation } from "@/lib/sql-query-types";
 import { formatDatasetLabel } from "@/lib/table-relations";
+import type { DerivedField } from "@/lib/derived-fields";
+import { sheetDataWithDerivedFields } from "@/lib/derived-fields";
 import { resolveWidgetSheetData } from "@/lib/db-table-datasets";
 import { detectSourcesKind } from "@/lib/data-source-labels";
 import { getWidgetLayoutWidth, layoutWidthLabel } from "@/lib/widget-layout";
@@ -41,6 +43,7 @@ interface DashboardBuilderModalProps {
   open: boolean;
   layout: DashboardLayout;
   data: SheetData;
+  derivedFields?: DerivedField[];
   dbDatasets?: Record<string, SheetData> | null;
   activeDbTables?: string[];
   tableRelations?: TableRelation[];
@@ -55,6 +58,7 @@ interface DashboardBuilderModalProps {
   onRemoveSheet: (url: string) => void;
   onToggleMerge: (enabled: boolean) => void;
   onReloadMerged: () => void;
+  onDerivedFieldsChange?: (fields: DerivedField[]) => void | Promise<void>;
 }
 
 export function DashboardBuilderModal(props: DashboardBuilderModalProps) {
@@ -73,6 +77,7 @@ function BuilderDialog({
   open,
   layout,
   data,
+  derivedFields = [],
   dbDatasets,
   activeDbTables = [],
   tableRelations,
@@ -87,6 +92,7 @@ function BuilderDialog({
   onRemoveSheet,
   onToggleMerge,
   onReloadMerged,
+  onDerivedFieldsChange,
 }: DashboardBuilderModalProps) {
   const [draft, setDraft] = useState<DashboardLayout>(layout);
   const [wizardMode, setWizardMode] = useState<WizardMode>(null);
@@ -102,8 +108,18 @@ function BuilderDialog({
     configScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const enrichData = (sheet: SheetData) => sheetDataWithDerivedFields(sheet, derivedFields);
+
   const dataForWidget = (widget: WidgetConfig) =>
-    resolveWidgetSheetData(data, dbDatasets, widget);
+    enrichData(resolveWidgetSheetData(data, dbDatasets, widget));
+
+  const baseColumnsForWidget = (widget: WidgetConfig) =>
+    resolveWidgetSheetData(data, dbDatasets, widget).columns;
+
+  const baseSheetForTable = (sourceTable?: string) =>
+    enrichData(
+      sourceTable && dbDatasets?.[sourceTable] ? dbDatasets[sourceTable] : data
+    );
 
   const defaultSourceTable = activeDbTables[0];
   const isDatabase =
@@ -131,9 +147,7 @@ function BuilderDialog({
 
       if (initialShape) {
         const maxOrder = Math.max(0, ...layout.widgets.map((w) => w.order));
-        const widgetData = defaultSourceTable && dbDatasets?.[defaultSourceTable]
-          ? dbDatasets[defaultSourceTable]
-          : data;
+        const widgetData = baseSheetForTable(defaultSourceTable);
         setEditingWidget(
           createWidgetFromShape(initialShape, widgetData, maxOrder, defaultSourceTable)
         );
@@ -176,10 +190,9 @@ function BuilderDialog({
   };
 
   const pickShape = (shapeId: WidgetVisualShape) => {
-    const widgetData = defaultSourceTable && dbDatasets?.[defaultSourceTable]
-      ? dbDatasets[defaultSourceTable]
-      : data;
-    setEditingWidget(createWidgetFromShape(shapeId, widgetData, maxOrder(), defaultSourceTable));
+    setEditingWidget(
+      createWidgetFromShape(shapeId, baseSheetForTable(defaultSourceTable), maxOrder(), defaultSourceTable)
+    );
     setWizardStep(2);
   };
 
@@ -472,6 +485,9 @@ function BuilderDialog({
                       tableRelations={tableRelations}
                       widget={editingWidget}
                       onChange={patchEditing}
+                      derivedFields={derivedFields}
+                      baseColumns={baseColumnsForWidget(editingWidget)}
+                      onDerivedFieldsChange={onDerivedFieldsChange}
                     />
                     <button
                       type="button"

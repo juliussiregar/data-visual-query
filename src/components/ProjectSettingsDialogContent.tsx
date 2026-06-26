@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Sheet,
   Database,
@@ -22,8 +22,13 @@ import { DatabaseConnectionQuickForm } from "./DatabaseConnectionQuickForm";
 import { DbTableMultiSelect } from "./DbTableMultiSelect";
 import { ProjectSourceVerify } from "./ProjectSourceVerify";
 import { ProjectTableRelationsEditor } from "./ProjectTableRelationsEditor";
+import { DerivedFieldsEditor } from "./DerivedFieldsEditor";
+import { formatDbTableLabel } from "@/lib/db-table-datasets";
+import { formatDatasetLabel } from "@/lib/table-relations";
 import { ConfirmDialog } from "./ConfirmDialog";
+import type { DerivedField } from "@/lib/derived-fields";
 import type { TableRelation } from "@/lib/sql-query-types";
+import type { ColumnMeta } from "@/lib/types";
 import { useToast } from "./ToastProvider";
 import { DatabaseConnectionCard } from "./DatabaseConnectionCard";
 import { cn } from "@/lib/utils";
@@ -39,6 +44,7 @@ interface ProjectSettingsDialogContentProps {
   onDeleted?: (projectId: string) => void;
   onLoad: () => void;
   loading?: boolean;
+  sheetColumns?: ColumnMeta[];
 }
 
 function SettingsSection({
@@ -72,6 +78,7 @@ export function ProjectSettingsDialogContent({
   onDeleted,
   onLoad,
   loading,
+  sheetColumns,
 }: ProjectSettingsDialogContentProps) {
   const [projectName, setProjectName] = useState(project.name);
   const [dbConnections, setDbConnections] = useState<DatabaseConnectionProfile[]>([]);
@@ -84,6 +91,7 @@ export function ProjectSettingsDialogContent({
   const [tableRelations, setTableRelations] = useState<TableRelation[]>(
     project.tableRelations ?? []
   );
+  const [derivedFields, setDerivedFields] = useState<DerivedField[]>(project.derivedFields ?? []);
   const [tables, setTables] = useState<{ schema: string; name: string; fullName: string }[]>([]);
   const [loadingTables, setLoadingTables] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -103,6 +111,7 @@ export function ProjectSettingsDialogContent({
     setProjectName(project.name);
     setDbTables(resolveProjectDbTables(project));
     setTableRelations(project.tableRelations ?? []);
+    setDerivedFields(project.derivedFields ?? []);
   }, [project.id, project.name, project.updatedAt]);
 
   useEffect(() => {
@@ -194,7 +203,7 @@ export function ProjectSettingsDialogContent({
       return;
     }
 
-    const patch = { name: trimmedName, ...sourcePatch };
+    const patch = { name: trimmedName, derivedFields, ...sourcePatch };
 
     try {
       const updated = await updateProject(project.id, patch);
@@ -299,6 +308,15 @@ export function ProjectSettingsDialogContent({
             confirmLabel: "Hapus project",
           }
         : null;
+
+  const derivedSourceLabel = useMemo(() => {
+    const table = dbTables[0] ?? project.activeDbTable;
+    if (table) {
+      return formatDatasetLabel(table, tableRelations) || formatDbTableLabel(table);
+    }
+    if (project.sheetUrls[0]) return "Google Sheet";
+    return undefined;
+  }, [dbTables, project.activeDbTable, project.sheetUrls, tableRelations]);
 
   return (
     <>
@@ -437,6 +455,13 @@ export function ProjectSettingsDialogContent({
             )}
           </div>
         </SettingsSection>
+
+        <DerivedFieldsEditor
+          fields={derivedFields}
+          onChange={setDerivedFields}
+          columns={sheetColumns ?? []}
+          sourceLabel={derivedSourceLabel}
+        />
 
         {saveError && (
           <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700">

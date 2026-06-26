@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from "node:fs/promises";
 import pg from "pg";
 import { loadEnvFile } from "./load-env.mjs";
 
@@ -35,15 +36,25 @@ async function main() {
     END
     $$;
   `);
-  await client.query(`GRANT CONNECT ON DATABASE ${database} TO ${readerUser}`);
-  await client.query(`GRANT USAGE ON SCHEMA public TO ${readerUser}`);
-  await client.query(`GRANT SELECT ON ALL TABLES IN SCHEMA public TO ${readerUser}`);
-  await client.query(
-    `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO ${readerUser}`
+  const educationSchemaPath = new URL(
+    "../docker/analytics-db/init/02-education-schema.sql",
+    import.meta.url
   );
+  const educationSchemaSql = await fs.readFile(educationSchemaPath, "utf8");
+  await client.query(educationSchemaSql);
+
+  await client.query(`GRANT CONNECT ON DATABASE ${database} TO ${readerUser}`);
+
+  for (const schema of ["public", "education"]) {
+    await client.query(`GRANT USAGE ON SCHEMA ${schema} TO ${readerUser}`);
+    await client.query(`GRANT SELECT ON ALL TABLES IN SCHEMA ${schema} TO ${readerUser}`);
+    await client.query(
+      `ALTER DEFAULT PRIVILEGES IN SCHEMA ${schema} GRANT SELECT ON TABLES TO ${readerUser}`
+    );
+  }
 
   await client.end();
-  console.log(`Analytics reader role '${readerUser}' ready (read-only).`);
+  console.log(`Analytics reader role '${readerUser}' ready (schemas: public, education).`);
 }
 
 main().catch((error) => {

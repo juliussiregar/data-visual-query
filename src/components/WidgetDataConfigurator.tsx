@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import type { SheetData, WidgetConfig, WidgetDataQuery } from "@/lib/types";
+import { useState, useMemo } from "react";
+import type { DerivedField } from "@/lib/derived-fields";
+import { buildDerivedFieldHelpText } from "@/lib/derived-fields";
+import type { ColumnMeta, SheetData, WidgetConfig, WidgetDataQuery } from "@/lib/types";
 import {
   AGGREGATION_LABELS,
   EMPTY_WIDGET_DATA_QUERY,
@@ -36,11 +38,8 @@ import { formatDbTableLabel } from "@/lib/db-table-datasets";
 import { formatDatasetLabel } from "@/lib/table-relations";
 import type { TableRelation } from "@/lib/sql-query-types";
 import { cn } from "@/lib/utils";
-import {
-  getWidgetLayoutWidth,
-  isForcedFullWidth,
-  layoutWidthLabel,
-} from "@/lib/widget-layout";
+import { getWidgetLayoutWidth, isForcedFullWidth, layoutWidthLabel } from "@/lib/widget-layout";
+import { DerivedColumnQuickAdd } from "./DerivedColumnQuickAdd";
 
 interface WidgetDataConfiguratorProps {
   data: SheetData;
@@ -50,6 +49,9 @@ interface WidgetDataConfiguratorProps {
   tableRelations?: TableRelation[];
   widget: WidgetConfig;
   onChange: (patch: Partial<WidgetConfig>) => void;
+  derivedFields?: DerivedField[];
+  baseColumns?: ColumnMeta[];
+  onDerivedFieldsChange?: (fields: DerivedField[]) => void | Promise<void>;
 }
 
 function patchQuery(
@@ -121,10 +123,14 @@ export function WidgetDataConfigurator({
   tableRelations,
   widget,
   onChange,
+  derivedFields = [],
+  baseColumns,
+  onDerivedFieldsChange,
 }: WidgetDataConfiguratorProps) {
   const q: WidgetDataQuery = { ...EMPTY_WIDGET_DATA_QUERY, ...widget.dataQuery };
   const shape = widget.visualShape ? getShapeDef(widget.visualShape) : undefined;
   const columns = getColumnOptions(data.columns);
+  const derivedKeys = new Set(derivedFields.map((f) => f.key));
   const categoryCols = columns.filter((c) => c.type === "category" || c.type === "text");
   const numericCols = columns.filter((c) => c.type === "number");
   const allCols = columns.filter((c) => c.key.trim());
@@ -143,6 +149,34 @@ export function WidgetDataConfigurator({
       ? selectedColumns.filter((k) => k !== key)
       : [...selectedColumns, key];
     onChange(patchQuery(widget, { displayColumns: next }));
+  };
+
+  const formulaBaseColumns = baseColumns ?? primaryData?.columns ?? data.columns;
+  const derivedSourceLabel =
+    widget.sourceTable && availableTables.length > 0
+      ? formatDatasetLabel(widget.sourceTable, tableRelations) ||
+        formatDbTableLabel(widget.sourceTable)
+      : undefined;
+  const derivedFieldHint = useMemo(
+    () => buildDerivedFieldHelpText(formulaBaseColumns, derivedSourceLabel),
+    [formulaBaseColumns, derivedSourceLabel]
+  );
+
+  const handleAddDerivedField = async (field: DerivedField) => {
+    if (!onDerivedFieldsChange) return;
+    if (derivedFields.some((f) => f.key === field.key)) return;
+    const next = [...derivedFields, field];
+    await onDerivedFieldsChange(next);
+    if (isTable) {
+      const cols = selectedColumns.includes(field.key)
+        ? selectedColumns
+        : [...selectedColumns, field.key];
+      onChange(patchQuery(widget, { displayColumns: cols }));
+    } else if (needsMeasure) {
+      onChange(patchQuery(widget, { measureKey: field.key }));
+    } else if (needsGroupBy && !q.groupByKey) {
+      onChange(patchQuery(widget, { groupByKey: field.key }));
+    }
   };
 
   return (
@@ -165,6 +199,22 @@ export function WidgetDataConfigurator({
           className="input-field text-sm"
         />
       </label>
+
+      {onDerivedFieldsChange && (
+        <Section
+          title="Kolom dihitung"
+          icon={Calculator}
+          hint={`${derivedFieldHint} Langsung tersimpan ke project dan bisa dipilih di widget.`}
+          defaultOpen={derivedFields.length === 0}
+        >
+          <DerivedColumnQuickAdd
+            baseColumns={formulaBaseColumns}
+            sourceLabel={derivedSourceLabel}
+            fields={derivedFields}
+            onAdd={(field) => void handleAddDerivedField(field)}
+          />
+        </Section>
+      )}
 
       {availableTables.length > 1 && (
         <label className="block">
@@ -263,8 +313,8 @@ export function WidgetDataConfigurator({
           icon={Calculator}
           hint={
             widget.visualShape === "stat"
-              ? "Choose how to summarize your data into one number."
-              : "How to aggregate values within each group."
+              ? "Choose how to summarize your data into one number. Kolom custom dari widget builder atau Pengaturan project tersedia di dropdown."
+              : "How to aggregate values within each group. Buat kolom custom di atas atau di Pengaturan project."
           }
         >
           <div className="grid gap-2 sm:grid-cols-2">
@@ -296,7 +346,7 @@ export function WidgetDataConfigurator({
                 <option value="">Numeric column…</option>
                 {numericCols.map((c) => (
                   <option key={c.key} value={c.key}>
-                    {c.businessLabel ?? c.label}
+                    {derivedKeys.has(c.key) ? `${c.businessLabel ?? c.label} (custom)` : c.businessLabel ?? c.label}
                   </option>
                 ))}
               </select>
@@ -314,6 +364,7 @@ export function WidgetDataConfigurator({
           <div className="flex flex-wrap gap-1.5">
             {allCols.map((c) => {
               const on = selectedColumns.includes(c.key);
+              const isCustom = derivedKeys.has(c.key);
               return (
                 <button
                   key={c.key}
@@ -322,11 +373,16 @@ export function WidgetDataConfigurator({
                   className={cn(
                     "rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors",
                     on
-                      ? "border-indigo-300 bg-indigo-50 text-indigo-700"
-                      : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300"
+                      ? isCustom
+                        ? "border-violet-400 bg-violet-100 text-violet-800"
+                        : "border-indigo-300 bg-indigo-50 text-indigo-700"
+                      : isCustom
+                        ? "border-violet-200 bg-violet-50/80 text-violet-700 hover:border-violet-300"
+                        : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300"
                   )}
                 >
                   {c.label}
+                  {isCustom && <span className="ml-1 text-[9px] opacity-70">custom</span>}
                 </button>
               );
             })}

@@ -33,10 +33,32 @@ Tools tersedia:
 - count_rows — hitung baris dengan filter
 - aggregate_column — sum/avg/min/max/count satu kolom
 - group_by — distribusi per kategori
+- run_visual_sql — query SQL-like (SELECT metric, AVG(avg_value) FROM * GROUP BY metric) → hasil + usulan widget
+- create_derived_field — validasi & preview kolom dihitung baru (rumus + − × ÷); setelah ok, WAJIB kirim action add_derived_field
 - top_rows — baris teratas
 - distinct_values — nilai unik + frekuensi
 - compare_groups — bandingkan dua subset filter
 - column_stats — profil kolom lengkap
+`;
+
+export const AI_DERIVED_COLUMN_RULES = `
+## Kolom dihitung (custom) — buat lewat chat
+
+User bisa minta membuat kolom baru dari rumus (mis. "buatkan kolom Total IPA = tugas + fisika + biologi").
+
+Alur WAJIB:
+1. Panggil tool **create_derived_field** dengan name, formula, key (opsional).
+2. Jika tool mengembalikan ok:true → **WAJIB** sertakan **persist_action** dari hasil tool sebagai item di array **actions** respons FINAL (type: add_derived_field).
+3. Jika tool error → jelaskan ke user; **jangan** kirim action.
+4. Setelah action diterapkan, kolom langsung tersedia untuk query tools, run_visual_sql, dan widget.
+
+Aturan rumus:
+- Operator: + − × ÷ dan kurung ().
+- Referensi kolom pakai **key** kolom numerik dari analytics pack (boleh juga label).
+- Boleh merujuk kolom custom yang sudah ada di project.
+- Jangan mengarang key — jika kolom belum ada, buat dulu atau minta user definisikan.
+
+Jika user minta analisis kolom yang belum ada → buat kolom dulu (tool + action), lalu lanjut analisis di respons berikutnya atau panggil query tool setelah konfirmasi kolom dibuat.
 `;
 
 export const AI_FOLLOWUP_RULES = `
@@ -140,6 +162,8 @@ ${AI_APP_GUIDE_RULES}
 
 ${AI_ANALYSIS_RULES}
 
+${AI_DERIVED_COLUMN_RULES}
+
 ## Dashboard yang tersedia
 - overview: ringkasan & widget kustom (Edit widgets, Add widget, template)
 - charts: galeri grafik (Charts)
@@ -157,6 +181,7 @@ ${AI_ANALYSIS_RULES}
 - set_view, set_filter, set_filters, clear_filters
 - set_widget_visibility, set_chart_type, set_chart_columns, reset_layout
 - add_sheet, remove_sheet, set_merge_mode
+- **add_derived_field** — simpan kolom dihitung ke project (name, formula, key opsional). Hanya setelah create_derived_field ok:true.
 
 ## Widget CRUD — WAJIB konfirmasi user
 Kirim widgetProposal (bukan langsung terapkan). Operasi: create | update | delete — tersimpan di **layout project aktif**.
@@ -196,4 +221,5 @@ export const AI_FINAL_JSON_INSTRUCTION = `Berdasarkan hasil query tools di atas 
 Untuk pertanyaan cara pakai aplikasi tanpa angka: jawab dari panduan, query tools tidak wajib.
 Untuk analisis data: gunakan HANYA angka dari hasil tool. Sertakan suggestedFollowUps — minimal 1 kind "widget" yang konkret.
 Setelah insight menarik: tawarkan ide widget di reply dengan nada antusias; isi "widgetProposals" hanya jika user sudah minta/setuju (boleh >1 item jika user minta beberapa widget).
+Jika user minta buat kolom dihitung: panggil create_derived_field, lalu WAJIB sertakan action add_derived_field di array actions bila tool ok:true.
 Jika belum cukup data analisis, set confidence "insufficient".`;

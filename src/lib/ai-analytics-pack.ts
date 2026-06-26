@@ -16,6 +16,18 @@ export function buildAnalyticsPack(dataset: AiQueryDataset, allowSensitive = fal
   lines.push(`Total baris sheet (sebelum filter UI): ${totalRowCount.toLocaleString("id-ID")}`);
   if (dataset.sourceUrl) lines.push(`Sumber: ${dataset.sourceUrl}`);
 
+  if (dataset.derivedFields?.length) {
+    lines.push(`\n--- Kolom dihitung (custom project) ---`);
+    for (const f of dataset.derivedFields) {
+      lines.push(`• ${f.name} (key: ${f.key}) = ${f.formula}`);
+    }
+    lines.push(
+      `Kolom di atas sudah tersimpan di project — bisa dipakai di query tools, run_visual_sql, dan widget.`
+    );
+  }
+
+  const derivedKeys = new Set((dataset.derivedFields ?? []).map((f) => f.key));
+
   if (dataset.kpis?.length) {
     lines.push(`\n--- KPI (pre-computed) ---`);
     for (const k of dataset.kpis) {
@@ -45,10 +57,11 @@ export function buildAnalyticsPack(dataset: AiQueryDataset, allowSensitive = fal
   lines.push(`\n--- Profil kolom ---`);
   for (const col of columns) {
     const label = col.businessLabel ?? col.label;
+    const derivedTag = derivedKeys.has(col.key) ? ", derived" : "";
     const samples =
       col.sensitive && !allowSensitive ? ["[PII]"] : col.sampleValues.slice(0, 5);
     lines.push(
-      `• ${label} (key: ${col.key}, type: ${col.type}${col.semanticRole ? `, role: ${col.semanticRole}` : ""}) — ${col.uniqueCount} unik, fill ${col.fillRate}% — contoh: ${samples.join(", ")}`
+      `• ${label} (key: ${col.key}, type: ${col.type}${col.semanticRole ? `, role: ${col.semanticRole}` : ""}${derivedTag}) — ${col.uniqueCount} unik, fill ${col.fillRate}% — contoh: ${samples.join(", ")}`
     );
   }
 

@@ -1,5 +1,6 @@
 import type { DashboardLayout } from "./types";
 import type { TableRelation } from "./sql-query-types";
+import type { DerivedField } from "./derived-fields";
 
 export interface Project {
   id: string;
@@ -12,6 +13,7 @@ export interface Project {
   activeDbTable: string | null;
   activeDbTables: string[];
   tableRelations: TableRelation[];
+  derivedFields: DerivedField[];
   layout: DashboardLayout | null;
   lastOpenedAt: string;
   createdAt: string;
@@ -30,6 +32,7 @@ export type ProjectPatch = Partial<
     | "activeDbTable"
     | "activeDbTables"
     | "tableRelations"
+    | "derivedFields"
     | "layout"
   >
 > & { touchOpened?: boolean };

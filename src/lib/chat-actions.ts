@@ -179,6 +179,8 @@ export function describeAction(
       return action.enabled ? "Aktifkan gabung sheet" : "Matikan gabung sheet";
     case "reset_layout":
       return "Reset layout default";
+    case "add_derived_field":
+      return `Buat kolom dihitung "${action.name}"`;
     default:
       return "Update dashboard";
   }

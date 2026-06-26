@@ -29,8 +29,8 @@ import {
   Area,
   AreaChart,
 } from "recharts";
-import { formatNumber, formatCurrency, formatChartAxisTick, chartAxisWidth } from "@/lib/format";
-import type { ChartConfig } from "@/lib/types";
+import { formatNumber, formatCurrency, formatChartAxisTick, chartAxisWidth, formatDisplayValue, inferColumnIsCurrency } from "@/lib/format";
+import type { ChartConfig, ChartSeriesSpec } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const CHART_FALLBACK = [
@@ -83,7 +83,7 @@ function CustomTooltip({
     <div className="rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 shadow-xl backdrop-blur-md">
       <p className="text-xs text-slate-400">{name}</p>
       <p className="text-sm font-semibold text-slate-900">
-        {isCurrency ? formatCurrency(value) : formatNumber(value)}
+        {isCurrency ? formatCurrency(value) : formatDisplayValue(value)}
       </p>
       {item.percentage !== undefined && (
         <p className="text-[10px] text-slate-500">{item.percentage.toFixed(1)}%</p>
@@ -174,19 +174,145 @@ function CategoryXAxis({
   );
 }
 
+function peakMultiSeries(
+  rows: Array<Record<string, string | number> & { name: string }>,
+  keys: string[]
+): { value: number }[] {
+  let peak = 0;
+  for (const row of rows) {
+    for (const key of keys) {
+      const value = Number(row[key]);
+      if (Number.isFinite(value)) peak = Math.max(peak, Math.abs(value));
+    }
+  }
+  return [{ value: peak }];
+}
+
+function MultiSeriesTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ name?: string; value?: number; dataKey?: string; color?: string; payload?: { name?: string } }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  const category = payload[0]?.payload?.name ?? label;
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 shadow-xl backdrop-blur-md">
+      <p className="mb-1 text-xs text-slate-400">{category}</p>
+      {payload.map((item) => (
+        <p key={String(item.dataKey)} className="text-sm font-medium text-slate-900">
+          <span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: item.color }} />
+          {item.name}: {formatDisplayValue(item.value ?? 0)}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 export function ChartRenderer({ chart, className, large, onDrillDown }: ChartRendererProps) {
-  const { type, data, aggregation, valueKey } = chart;
-  const isCurrency = aggregation !== "count" && !!valueKey;
+  const { type, data, aggregation, valueKey, valueFormat, series = [], multiSeriesData } = chart;
+  const isMultiSeries = series.length > 1 && Boolean(multiSeriesData?.length);
+  const chartData = isMultiSeries ? multiSeriesData! : data;
+  const isCurrency =
+    valueFormat === "currency" ||
+    (valueFormat !== "number" &&
+      aggregation !== "count" &&
+      !!valueKey &&
+      inferColumnIsCurrency(valueKey));
   const gradientId = `area-${chart.id}`;
   const drillCursor = onDrillDown ? "pointer" : "default";
 
-  if (data.length === 0) {
+  if (chartData.length === 0) {
     return (
       <div className={cn("flex items-center justify-center text-sm text-slate-500", large ? "h-96" : "h-64")}>
         Tidak ada data untuk ditampilkan
       </div>
     );
   }
+
+  const renderMultiSeriesBars = (
+    layout: "vertical" | "horizontal",
+    stacked: boolean
+  ) => {
+    const rows = multiSeriesData ?? [];
+    const keys = series.map((s) => s.key);
+    const axisData = peakMultiSeries(rows, keys);
+    const bars = series.map((s: ChartSeriesSpec, index: number) => (
+      <Bar
+        key={s.key}
+        dataKey={s.key}
+        name={s.label}
+        fill={CHART_FALLBACK[index % CHART_FALLBACK.length]}
+        stackId={stacked ? "stack" : undefined}
+        radius={
+          stacked
+            ? index === series.length - 1
+              ? layout === "horizontal"
+                ? [0, 6, 6, 0]
+                : [6, 6, 0, 0]
+              : [0, 0, 0, 0]
+            : layout === "horizontal"
+              ? [0, 6, 6, 0]
+              : [6, 6, 0, 0]
+        }
+        style={{ cursor: drillCursor }}
+        onClick={(d) => handleDrillClick(onDrillDown, d)}
+      />
+    ));
+
+    if (layout === "horizontal") {
+      return (
+        <BarChart data={rows} layout="vertical" margin={{ ...CHART_MARGIN, left: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.3} />
+          <ValueXAxis data={axisData} isCurrency={isCurrency} />
+          <CategoryYAxis />
+          <Tooltip content={<MultiSeriesTooltip />} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          {bars}
+        </BarChart>
+      );
+    }
+
+    return (
+      <BarChart data={rows} margin={CHART_MARGIN}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.3} />
+        <CategoryXAxis maxLen={10} />
+        <ValueYAxis data={axisData} isCurrency={isCurrency} />
+        <Tooltip content={<MultiSeriesTooltip />} />
+        <Legend wrapperStyle={{ fontSize: 11 }} />
+        {bars}
+      </BarChart>
+    );
+  };
+
+  const renderMultiSeriesLines = () => {
+    const rows = multiSeriesData ?? [];
+    const keys = series.map((s) => s.key);
+    const axisData = peakMultiSeries(rows, keys);
+    return (
+      <LineChart data={rows} margin={CHART_MARGIN}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" opacity={0.3} />
+        <CategoryXAxis />
+        <ValueYAxis data={axisData} isCurrency={isCurrency} />
+        <Tooltip content={<MultiSeriesTooltip />} />
+        <Legend wrapperStyle={{ fontSize: 11 }} />
+        {series.map((s, index) => (
+          <Line
+            key={s.key}
+            type="monotone"
+            dataKey={s.key}
+            name={s.label}
+            stroke={CHART_FALLBACK[index % CHART_FALLBACK.length]}
+            strokeWidth={2}
+            dot={{ r: 3, cursor: drillCursor }}
+          />
+        ))}
+      </LineChart>
+    );
+  };
 
   const scatterData = data.map((d, i) => ({
     ...d,
@@ -196,6 +322,23 @@ export function ChartRenderer({ chart, className, large, onDrillDown }: ChartRen
   }));
 
   const chartContent = (() => {
+    if (isMultiSeries) {
+      switch (type) {
+        case "stackedBar":
+          return renderMultiSeriesBars("vertical", true);
+        case "horizontalBar":
+          return renderMultiSeriesBars("horizontal", false);
+        case "line":
+        case "area":
+          return renderMultiSeriesLines();
+        case "composed":
+          return renderMultiSeriesBars("vertical", false);
+        case "bar":
+        default:
+          return renderMultiSeriesBars("vertical", false);
+      }
+    }
+
     switch (type) {
       case "pie":
       case "donut":
@@ -359,7 +502,7 @@ export function ChartRenderer({ chart, className, large, onDrillDown }: ChartRen
                   <div className="rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 shadow-xl">
                     <p className="text-xs text-slate-400">{item.name}</p>
                     <p className="text-sm font-semibold text-slate-900">
-                      {isCurrency ? formatCurrency(item.value) : formatNumber(item.value)}
+                      {isCurrency ? formatCurrency(item.value) : formatDisplayValue(item.value)}
                     </p>
                   </div>
                 );

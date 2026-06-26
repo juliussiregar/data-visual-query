@@ -30,5 +30,8 @@ export function parseAiQueryDataset(raw: unknown): AiQueryDataset | null {
       d.metricValues && typeof d.metricValues === "object"
         ? (d.metricValues as AiQueryDataset["metricValues"])
         : undefined,
+    derivedFields: Array.isArray(d.derivedFields)
+      ? (d.derivedFields as AiQueryDataset["derivedFields"])
+      : undefined,
   };
 }

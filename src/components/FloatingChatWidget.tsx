@@ -4,6 +4,7 @@ import { useState, type CSSProperties } from "react";
 import { Bot, X, Sparkles } from "lucide-react";
 import type { SheetData, ViewId, DashboardLayout, DataScope, DashboardAction, WidgetProposal, WidgetProposalConfirmResult, WidgetProposalsConfirmResult } from "@/lib/types";
 import type { TableRelation } from "@/lib/sql-query-types";
+import type { DerivedField } from "@/lib/derived-fields";
 import type { UserRole } from "@/lib/auth";
 import { ChatPanel } from "./ChatPanel";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,7 @@ interface FloatingChatWidgetProps {
   dbDatasets: Record<string, SheetData> | null;
   activeDbTables: string[];
   tableRelations?: TableRelation[];
+  derivedFields?: DerivedField[];
   onApplyActions: (actions: DashboardAction[]) => void;
   onConfirmWidgetProposal: (proposal: WidgetProposal) => WidgetProposalConfirmResult;
   onConfirmWidgetProposals: (proposals: WidgetProposal[]) => WidgetProposalsConfirmResult;
@@ -85,6 +87,7 @@ export function FloatingChatWidget({
   dbDatasets,
   activeDbTables,
   tableRelations,
+  derivedFields,
   onApplyActions,
   onConfirmWidgetProposal,
   onConfirmWidgetProposals,
@@ -136,6 +139,7 @@ export function FloatingChatWidget({
             dbDatasets={dbDatasets}
             activeDbTables={activeDbTables}
             tableRelations={tableRelations}
+            derivedFields={derivedFields}
             onApplyActions={onApplyActions}
             onConfirmWidgetProposal={onConfirmWidgetProposal}
             onConfirmWidgetProposals={onConfirmWidgetProposals}

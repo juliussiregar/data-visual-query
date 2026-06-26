@@ -48,6 +48,11 @@ ${ctx.availableTables
         .join("\n")}`
     : "";
 
+  const derivedBlock = ctx.derivedFields?.length
+    ? `\n\nKolom dihitung project (bisa dipakai query & widget; buat baru via create_derived_field + action add_derived_field):
+${ctx.derivedFields.map((f) => `- ${f.name} (key: ${f.key}) = ${f.formula}`).join("\n")}`
+    : "\n\nKolom dihitung: belum ada — user bisa minta dibuat lewat chat (create_derived_field).";
+
   return `\n\n--- DASHBOARD CONTEXT ---
 View aktif: ${ctx.activeView}
 ${buildActiveViewHelpHint(ctx.activeView)}
@@ -65,7 +70,7 @@ ${filterLines}
 Grafik auto-detect: ${ctx.chartTitles.join("; ")}
 
 Layout widgets:
-${widgetLines}${widgetCoaching}${tablesBlock}`;
+${widgetLines}${widgetCoaching}${tablesBlock}${derivedBlock}`;
 }
 
 export async function POST(request: NextRequest) {

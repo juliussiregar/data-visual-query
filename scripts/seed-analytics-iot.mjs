@@ -71,7 +71,7 @@ async function main() {
   const schemaSql = await fs.readFile(schemaPath, "utf8");
   await client.query(schemaSql);
 
-  await client.query("TRUNCATE device_daily_summary, device_alerts, sensor_readings, devices RESTART IDENTITY CASCADE");
+  await client.query("TRUNCATE device_health_scores, device_daily_summary, device_alerts, sensor_readings, devices RESTART IDENTITY CASCADE");
 
   for (const row of DEVICES) {
     await client.query(
@@ -143,6 +143,54 @@ async function main() {
     GROUP BY device_id, recorded_at::date, metric
   `);
 
+  const typeBias = {
+    temperature: { b: 72, p: 8, s: 6, t: 78, a: 70 },
+    humidity: { b: 65, p: 12, s: 8, t: 68, a: 82 },
+    energy: { b: 80, p: 15, s: 10, t: 75, a: 62 },
+    air_quality: { b: 68, p: 10, s: 7, t: 70, a: 88 },
+    vibration: { b: 58, p: 18, s: 9, t: 72, a: 65 },
+    gateway: { b: 75, p: 6, s: 5, t: 74, a: 60 },
+  };
+
+  for (const device of devices.rows) {
+    const bias = typeBias[device.device_type] ?? typeBias.temperature;
+    const zoneMod = device.zone === "warehouse" ? -4 : device.zone === "it" ? 3 : 0;
+    await client.query(
+      `
+      INSERT INTO device_health_scores (
+        device_id, device_code, zone, summary_date,
+        baseline_load, peak_load, steady_load, thermal_score, air_score
+      )
+      SELECT
+        $1,
+        $2,
+        $3,
+        d::date,
+        ROUND(($4 + random() * 6 + $8)::numeric, 2),
+        ROUND(($5 + random() * 5 + $8 * 0.5)::numeric, 2),
+        ROUND(($6 + random() * 4 + $8 * 0.3)::numeric, 2),
+        ROUND(($7 + random() * 7 + $8)::numeric, 2),
+        ROUND(($9 + random() * 8 - $8 * 0.2)::numeric, 2)
+      FROM generate_series(
+        (CURRENT_DATE - INTERVAL '13 days')::date,
+        CURRENT_DATE,
+        INTERVAL '1 day'
+      ) AS d
+      `,
+      [
+        device.id,
+        device.device_code,
+        device.zone,
+        bias.b,
+        bias.p,
+        bias.s,
+        bias.t,
+        zoneMod,
+        bias.a,
+      ]
+    );
+  }
+
   await client.query(`
     INSERT INTO device_alerts (device_id, severity, message, triggered_at, resolved_at)
     SELECT d.id, v.severity, v.message, v.triggered_at, v.resolved_at
@@ -161,7 +209,8 @@ async function main() {
       (SELECT COUNT(*)::int FROM devices) AS devices,
       (SELECT COUNT(*)::int FROM sensor_readings) AS readings,
       (SELECT COUNT(*)::int FROM device_alerts) AS alerts,
-      (SELECT COUNT(*)::int FROM device_daily_summary) AS daily_rows
+      (SELECT COUNT(*)::int FROM device_daily_summary) AS daily_rows,
+      (SELECT COUNT(*)::int FROM device_health_scores) AS health_rows
   `);
 
   await client.end();
@@ -172,6 +221,13 @@ async function main() {
   console.log(`  sensor_readings: ${stats.readings}`);
   console.log(`  device_alerts: ${stats.alerts}`);
   console.log(`  device_daily_summary: ${stats.daily_rows}`);
+  console.log(`  device_health_scores: ${stats.health_rows}`);
+  console.log("");
+  console.log("Latihan formula BI — tabel device_health_scores + Kolom turunan:");
+  console.log("  Beban operasi = baseline_load + peak_load + steady_load");
+  console.log("  Kesehatan Exact = Beban operasi + thermal_score + air_score");
+  console.log("  Kesehatan Hafal = air_score");
+  console.log("  Query: SELECT zone, AVG(beban_total) FROM * GROUP BY zone");
 }
 
 main().catch((error) => {

@@ -26,6 +26,12 @@ const FIELD_RULES: FieldRule[] = [
     description: "Referensi ke entitas lain — boleh berulang di tabel agregat/fact",
   },
   {
+    pattern: /student_code|device_code|_code$|^code$/i,
+    role: "identifier",
+    businessLabel: "Kode entitas",
+    description: "Kode/ID record — bukan nilai uang atau metrik",
+  },
+  {
     pattern: /^no$|^id$|^id_|no[_\s]?(fasilitas|pengajuan|order|transaksi)/i,
     role: "identifier",
     businessLabel: "Identifier",

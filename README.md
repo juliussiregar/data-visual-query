@@ -9,7 +9,9 @@ Workspace BI untuk mengubah **Google Sheet** atau **database SQL** (PostgreSQL /
 - **Multi-view** — Overview, Grafik, Data, Cari Data, Sumber
 - **Google Sheet publik** + **PostgreSQL** & **MySQL** eksternal
 - **Filter, drill-down, visual query** — tanpa menulis kode
-- **AI Chat** (opsional) — analisis data & aksi dashboard
+- **Kolom custom** — user buat kolom baru dari gabungan kolom yang ada (mis. `tugas + fisika + biologi`), hanya di aplikasi
+- **Query editor SQL-like** — `SELECT metric, AVG(avg_value) FROM * GROUP BY metric` → grafik
+- **AI Chat** (opsional) — analisis data, query SQL-like (`run_visual_sql`), & aksi dashboard
 - **Auth** — login, role viewer / analyst / admin
 
 ## Prasyarat
@@ -84,19 +86,75 @@ npm run analytics:setup
 | `devices` | Master perangkat IoT (10 sensor contoh) |
 | `sensor_readings` | Pembacaan per jam (14 hari terakhir) |
 | `device_daily_summary` | Agregat harian per metrik |
+| `device_health_scores` | Skor komponen per perangkat/hari (latihan formula BI) |
 | `device_alerts` | Alert contoh |
 
-**Koneksi di SheetVision** (`npm run dev` di laptop):
+Refresh data sample (lokal, butuh Node.js):
+
+```bash
+npm run analytics:seed
+```
+
+**Koneksi di SheetVision — deploy server** (app & DB di Docker Compose yang sama):
+
+| Field | Nilai |
+|-------|-------|
+| Host | `analytics-db` |
+| Port | `5432` |
+| Database | `iot_analytics` |
+| User | `iot_reader` |
+| Password | dari `.env` → `ANALYTICS_DB_READER_PASSWORD` |
+
+> Port `54328` hanya untuk akses dari **host/laptop** (`localhost`), bukan dari form koneksi di container `app`.
+
+**Koneksi di SheetVision — dev lokal** (`npm run dev` di laptop):
 
 | Field | Nilai |
 |-------|-------|
 | Host | `localhost` |
 | Port | `54328` |
 | Database | `iot_analytics` |
-| User | `iot_reader` (read-only) |
+| User | `iot_reader` |
 | Password | `iot_reader` (atau `ANALYTICS_DB_READER_PASSWORD`) |
 
-Refresh data sample: `npm run analytics:seed`
+**Kolom custom** — gabungkan kolom yang sudah ada tanpa mengubah database sumber:
+
+1. Project → tabel **`device_health_scores`** (schema `public`)
+2. Pengaturan → **Kolom baru (custom)** → misalnya nama `Beban total`, rumus `baseline_load + peak_load + steady_load`
+3. Simpan project → Explore: `SELECT zone, AVG(beban_total) FROM * GROUP BY zone`
+
+### Demo pendidikan (schema terpisah, database sama)
+
+IoT dan pendidikan berada di **satu container** `analytics-db`, database `iot_analytics`:
+
+| Schema | Tabel | Isi |
+|--------|-------|-----|
+| `public` | `devices`, `sensor_readings`, … | Data IoT |
+| `education` | `students`, `student_grades` | Nilai siswa demo |
+
+```bash
+npm run education:seed
+# Server:
+docker compose exec app sh -c 'ANALYTICS_DB_HOST=analytics-db ANALYTICS_DB_PORT=5432 node scripts/seed-education-analytics.mjs'
+docker compose exec app sh -c 'ANALYTICS_DB_HOST=analytics-db ANALYTICS_DB_PORT=5432 node scripts/setup-analytics-reader.mjs'
+```
+
+**Koneksi SheetVision — project pendidikan** (beda project dari IoT):
+
+| Field | Nilai |
+|-------|-------|
+| Host | `analytics-db` (server) / `localhost` (dev) |
+| Port | `5432` / `54328` |
+| Database | `iot_analytics` |
+| **Schema** | **`education`** |
+| User | `iot_reader` |
+
+Tabel: **`student_grades`** — kolom `tugas`, `ulangan`, `ujian`, `fisika`, `biologi`, `region`, `jurusan`.
+
+1. Pengaturan → **Kolom baru (custom)** → misalnya nama `IPA`, rumus `tugas + fisika + biologi`
+2. Simpan project → Explore: `SELECT region, AVG(ipa) FROM * GROUP BY region`
+
+Arsitektur IoT produksi: [docs/IOT_INGESTION.md](docs/IOT_INGESTION.md)
 
 ## Database retail MySQL (sumber data eksternal)
 
@@ -115,7 +173,26 @@ npm run mysql:setup
 | `order_items` | Detail baris per pesanan |
 | `daily_sales_summary` | Agregat harian per wilayah |
 
-**Koneksi di SheetVision** (`npm run dev` di laptop):
+Refresh data sample (lokal, butuh Node.js):
+
+```bash
+npm run mysql:seed
+```
+
+**Koneksi di SheetVision — deploy server** (app & DB di Docker Compose yang sama):
+
+| Field | Nilai |
+|-------|-------|
+| Tipe | MySQL |
+| Host | `mysql-analytics-db` |
+| Port | `3306` |
+| Database | `retail_analytics` |
+| User | `retail_reader` |
+| Password | dari `.env` → `MYSQL_ANALYTICS_DB_READER_PASSWORD` |
+
+> Port `33068` hanya untuk akses dari **host/laptop** (`localhost`), bukan dari form koneksi di container `app`.
+
+**Koneksi di SheetVision — dev lokal** (`npm run dev` di laptop):
 
 | Field | Nilai |
 |-------|-------|
@@ -123,17 +200,17 @@ npm run mysql:setup
 | Host | `localhost` |
 | Port | `33068` |
 | Database | `retail_analytics` |
-| User | `retail_reader` (read-only) |
+| User | `retail_reader` |
 | Password | `retail_reader` (atau `MYSQL_ANALYTICS_DB_READER_PASSWORD`) |
 
-Refresh data sample: `npm run mysql:seed`
-
 ## Perintah berguna
+
+**Dev lokal** (butuh Node.js):
 
 ```bash
 npm run dev          # Development
 npm run build        # Production build
-npm run db:setup     # Migrasi + seed
+npm run db:setup     # Migrasi + seed akun app
 npm run analytics:setup   # DB IoT PostgreSQL + data contoh
 npm run analytics:seed    # Isi ulang data IoT
 npm run mysql:setup       # DB retail MySQL + data contoh
@@ -141,7 +218,125 @@ npm run mysql:seed        # Isi ulang data retail MySQL
 npm run db:reset-workspace  # Reset data workspace (via API / menu user)
 ```
 
-## Deploy
+**Server tanpa Node.js** — seed lewat container: lihat [Deploy server (Docker Compose)](#deploy-server-docker-compose).
+
+## Deploy server (Docker Compose)
+
+Cocok untuk VPS tanpa Node.js di host. Semua service dijalankan lewat Docker.
+
+### 1. Persiapan
+
+```bash
+cp .env.example .env
+# Isi minimal: APP_SECRET, DB_PASSWORD, ANALYTICS_DB_PASSWORD, MYSQL_ANALYTICS_DB_PASSWORD
+```
+
+### 2. Build & jalankan
+
+```bash
+docker compose up -d --build
+```
+
+Service yang berjalan:
+
+| Container | Port (host) | Fungsi |
+|-----------|-------------|--------|
+| `sheetvision-app` | `3066` (default) | Aplikasi web |
+| `sheetvision-db` | `127.0.0.1:54327` | Database aplikasi (Prisma) |
+| `sheetvision-analytics-db` | `127.0.0.1:54328` | PostgreSQL demo IoT |
+| `sheetvision-mysql-analytics-db` | `127.0.0.1:33068` | MySQL demo retail |
+
+### 3. Yang otomatis vs manual
+
+| Langkah | Otomatis? | Keterangan |
+|---------|-----------|------------|
+| Migrasi schema app (`db`) | ✅ | Saat container `app` start (`RUN_DB_MIGRATE=true`) |
+| Skema tabel IoT / MySQL + user reader | ✅ | Saat volume DB pertama kali dibuat |
+| **Seed akun login** (`admin`, `superadmin`) | ❌ sekali | Lihat perintah di bawah |
+| **Data sample IoT / MySQL** | ❌ opsional | Lihat perintah di bawah |
+
+### 4. Seed akun login (wajib, sekali)
+
+```bash
+docker compose run --rm -e RUN_DB_SEED=true app true
+```
+
+Atau set `RUN_DB_SEED=true` di `.env`, lalu `docker compose restart app` sekali, lalu kembalikan ke `false`.
+
+Akun: `admin` / `admin123`, `superadmin` / `admin123`
+
+### 5. Seed data demo PostgreSQL (IoT) lewat container
+
+Tidak perlu `npm` di server. Jalankan dari folder project (`~/data-visual-query`):
+
+```bash
+docker compose exec app sh -c \
+  'ANALYTICS_DB_HOST=analytics-db ANALYTICS_DB_PORT=5432 node scripts/seed-analytics-iot.mjs'
+```
+
+Output yang diharapkan: jumlah baris di `devices`, `sensor_readings`, `device_alerts`, `device_daily_summary`.
+
+Isi ulang data kapan saja dengan perintah yang sama.
+
+### 5b. Seed data demo pendidikan (schema `education`, database sama)
+
+```bash
+docker compose exec app sh -c \
+  'ANALYTICS_DB_HOST=analytics-db ANALYTICS_DB_PORT=5432 node scripts/seed-education-analytics.mjs'
+
+# Grant reader ke schema education (sekali setelah pull, atau setelah DB lama tanpa schema ini):
+docker compose exec app sh -c \
+  'ANALYTICS_DB_HOST=analytics-db ANALYTICS_DB_PORT=5432 node scripts/setup-analytics-reader.mjs'
+```
+
+Di SheetVision: koneksi baru dengan **Schema = `education`**, tabel `student_grades`.
+
+### 6. Seed data demo MySQL (retail) lewat container
+
+```bash
+docker compose exec app sh -c \
+  'MYSQL_ANALYTICS_DB_HOST=mysql-analytics-db MYSQL_ANALYTICS_DB_PORT=3306 node scripts/seed-mysql-analytics.mjs'
+```
+
+> Butuh image `app` yang sudah include `mysql2` (ada di `Dockerfile`). Setelah `git pull`, jalankan `docker compose up -d --build` sekali.
+
+**Alternatif tanpa rebuild** (one-off container Node, jika image lama belum punya `mysql2`):
+
+```bash
+docker run --rm \
+  --network data-visual-query_sheetvision \
+  -v "$(pwd):/app" -w /app \
+  --env-file .env \
+  -e MYSQL_ANALYTICS_DB_HOST=mysql-analytics-db \
+  -e MYSQL_ANALYTICS_DB_PORT=3306 \
+  node:20-alpine \
+  sh -c "npm install mysql2 && node scripts/seed-mysql-analytics.mjs"
+```
+
+> Ganti `data-visual-query_sheetvision` jika nama network berbeda (`docker network ls | grep sheetvision`).
+
+### 7. Koneksi DB di UI SheetVision (server)
+
+Saat app dan database demo berjalan di **Docker Compose yang sama**, gunakan **nama service** sebagai host — bukan IP publik server:
+
+| Database | Host | Port |
+|----------|------|------|
+| PostgreSQL IoT | `analytics-db` | `5432` |
+| MySQL retail | `mysql-analytics-db` | `3306` |
+
+Port `54328` / `33068` hanya untuk akses langsung dari mesin host (mis. DBeaver di laptop via SSH tunnel).
+
+### 8. Cek cepat
+
+```bash
+docker compose ps
+docker compose logs app --tail 30
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3066
+```
+
+---
+
+## Deploy lain (Vercel / PaaS)
 
 Deploy ke platform yang mendukung Next.js (mis. Vercel). **Wajib** set environment variables yang sama seperti `.env` — terutama `DB_*` dan `APP_SECRET`. Tanpa database aplikasi, login dan penyimpanan project tidak berfungsi.
 

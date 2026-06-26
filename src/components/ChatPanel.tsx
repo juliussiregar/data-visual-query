@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import type { ChatMessage, SheetData, ViewId, DashboardLayout, DataScope, WidgetProposal, WidgetProposalConfirmResult, WidgetProposalsConfirmResult, AiQueryDataset, SuggestedFollowUp, DashboardAction, DashboardContext } from "@/lib/types";
 import type { TableRelation } from "@/lib/sql-query-types";
+import type { DerivedField } from "@/lib/derived-fields";
 import { describeAction } from "@/lib/chat-actions";
 import type { UserRole } from "@/lib/auth";
 import { getFilterableColumns } from "@/lib/filters";
@@ -97,6 +98,7 @@ interface ChatPanelProps {
   dbDatasets: Record<string, SheetData> | null;
   activeDbTables: string[];
   tableRelations?: TableRelation[];
+  derivedFields?: DerivedField[];
   onApplyActions: (actions: DashboardAction[]) => void;
   onConfirmWidgetProposal: (proposal: WidgetProposal) => WidgetProposalConfirmResult;
   onConfirmWidgetProposals: (proposals: WidgetProposal[]) => WidgetProposalsConfirmResult;
@@ -133,6 +135,7 @@ export function ChatPanel({
   dbDatasets,
   activeDbTables,
   tableRelations,
+  derivedFields = [],
   onApplyActions,
   onConfirmWidgetProposal,
   onConfirmWidgetProposals,
@@ -166,8 +169,13 @@ export function ChatPanel({
       insights: data.insights,
       metrics: data.metrics,
       metricValues: data.metricValues,
+      derivedFields: derivedFields.map((f) => ({
+        name: f.name,
+        key: f.key,
+        formula: f.formula,
+      })),
     }),
-    [data, totalRowCount]
+    [data, totalRowCount, derivedFields]
   );
 
   const dashboardContext: DashboardContext = useMemo(() => {
@@ -213,8 +221,13 @@ export function ChatPanel({
       sheetUrls,
       mergeMode: layout.mergeMode,
       editMode: false,
+      derivedFields: derivedFields.map((f) => ({
+        name: f.name,
+        key: f.key,
+        formula: f.formula,
+      })),
     };
-  }, [data, activeView, filters, dataScope, totalRowCount, userRole, layout, sheetUrls, dbDatasets, activeDbTables, tableRelations]);
+  }, [data, activeView, filters, dataScope, totalRowCount, userRole, layout, sheetUrls, dbDatasets, activeDbTables, tableRelations, derivedFields]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

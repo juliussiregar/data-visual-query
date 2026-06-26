@@ -3,7 +3,7 @@ import { attachColumnLineage, buildLineageSummary } from "./lineage";
 import { runDataQualityChecks } from "./data-quality";
 import { aggregateData, CHART_COLORS } from "./aggregation";
 import { buildGenericMetrics } from "./generic-metrics";
-import { formatCurrency, formatNumber, parseNumber } from "./format";
+import { formatCurrency, formatNumber, parseNumber, inferColumnIsCurrency, formatDisplayValue, isIdentifierColumn } from "./format";
 import type {
   ChartConfig,
   ChartDataPoint,
@@ -95,11 +95,13 @@ function pickChartType(uniqueCount: number, index: number): ChartType {
 }
 
 function getMainNumeric(columns: ColumnMeta[]): ColumnMeta | undefined {
-  const numericCols = columns.filter((c) => c.type === "number");
+  const numericCols = columns.filter(
+    (c) => c.type === "number" && !isIdentifierColumn(c)
+  );
   return (
-    numericCols.find((c) =>
-      /plafond|jumlah|total|amount|nilai|harga|revenue|sales/i.test(c.key)
-    ) ?? numericCols[0]
+    numericCols.find((c) => inferColumnIsCurrency(c)) ??
+    numericCols.find((c) => c.semanticRole === "measure") ??
+    numericCols[0]
   );
 }
 
@@ -153,6 +155,7 @@ function generateCharts(
         data: data.slice(0, 12),
         description: `Agregasi ${mainNumeric.label} berdasarkan ${col.label}`,
         featured: /status/i.test(col.key),
+        valueFormat: inferColumnIsCurrency(mainNumeric) ? "currency" : "number",
       });
     });
 
@@ -168,6 +171,7 @@ function generateCharts(
         aggregation: "avg",
         data: data.slice(0, 10),
         description: `Nilai rata-rata ${mainNumeric.label} tiap ${col.label}`,
+        valueFormat: inferColumnIsCurrency(mainNumeric) ? "currency" : "number",
       });
     });
   }
@@ -198,25 +202,28 @@ function generateKpis(
     const avg = values.length > 0 ? total / values.length : 0;
     const max = values.length > 0 ? Math.max(...values) : 0;
 
+    const money = inferColumnIsCurrency(mainNumeric);
+    const fmt = (n: number) => (money ? formatCurrency(n) : formatDisplayValue(n));
+
     kpis.push({
       id: "total-sum",
       label: `Total ${mainNumeric.label}`,
-      value: formatCurrency(total),
+      value: fmt(total),
       sublabel: "agregasi semua baris",
-      icon: "wallet",
+      icon: money ? "wallet" : "chart",
       trend: "up",
     });
     kpis.push({
       id: "avg",
       label: `Rata-rata ${mainNumeric.label}`,
-      value: formatCurrency(avg),
+      value: fmt(avg),
       sublabel: `dari ${values.length} entri`,
       icon: "trending",
     });
     kpis.push({
       id: "max",
       label: `Tertinggi ${mainNumeric.label}`,
-      value: formatCurrency(max),
+      value: fmt(max),
       sublabel: "nilai maksimum",
       icon: "activity",
       trend: "neutral",
@@ -291,12 +298,14 @@ function generateInsights(
       .map((r) => parseNumber(r[mainNumeric.key]))
       .filter((v): v is number => v !== null);
     const total = values.reduce((a, b) => a + b, 0);
+    const money = inferColumnIsCurrency(mainNumeric);
+    const fmt = (n: number) => (money ? formatCurrency(n) : formatDisplayValue(n));
     insights.push({
       id: "total-value",
-      title: `Total ${mainNumeric.label}: ${formatCurrency(total)}`,
-      description: `Nilai terkonsentrasi pada ${values.length} baris valid. Rata-rata ${formatCurrency(total / (values.length || 1))} per entri.`,
+      title: `Total ${mainNumeric.label}: ${fmt(total)}`,
+      description: `Nilai terkonsentrasi pada ${values.length} baris valid. Rata-rata ${fmt(total / (values.length || 1))} per entri.`,
       type: "highlight",
-      metric: formatCurrency(total),
+      metric: fmt(total),
     });
   }
 

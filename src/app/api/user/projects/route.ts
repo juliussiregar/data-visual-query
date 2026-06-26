@@ -53,6 +53,7 @@ export async function POST(request: NextRequest) {
       activeDbTable: typeof activeDbTable === "string" ? activeDbTable : undefined,
       activeDbTables: tables,
       tableRelations: Array.isArray(body.tableRelations) ? body.tableRelations : undefined,
+      derivedFields: Array.isArray(body.derivedFields) ? body.derivedFields : undefined,
     });
     return NextResponse.json({ project });
   } catch (error) {
