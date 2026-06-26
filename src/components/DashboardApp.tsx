@@ -154,6 +154,7 @@ export function DashboardApp() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [settingsProject, setSettingsProject] = useState<Project | null>(null);
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
   const activeProjectRef = useRef<Project | null>(null);
   activeProjectRef.current = activeProject;
@@ -602,6 +603,22 @@ export function DashboardApp() {
     [openProject, loadProject]
   );
 
+  const handleEditProject = useCallback(
+    (project: Project) => {
+      if (project.id !== activeProject?.id) {
+        handleSelectProject(project);
+      }
+      setSettingsProject(project);
+      setShowSettingsDialog(true);
+    },
+    [activeProject?.id, handleSelectProject]
+  );
+
+  const handleOpenProjectSettings = useCallback(() => {
+    setSettingsProject(activeProject);
+    setShowSettingsDialog(true);
+  }, [activeProject]);
+
   const handleLoadActiveProject = useCallback(() => {
     if (!activeProject) return;
     void loadProject(activeProject);
@@ -632,6 +649,7 @@ export function DashboardApp() {
   const handleProjectDeleted = useCallback(
     (projectId: string) => {
       setShowSettingsDialog(false);
+      setSettingsProject(null);
       const remaining = projects.filter((p) => p.id !== projectId);
       setProjects(remaining);
 
@@ -762,7 +780,7 @@ export function DashboardApp() {
         prev.map((p) => (p.id === project.id ? { ...p, derivedFields: fields } : p))
       );
       await updateProject(project.id, { derivedFields: fields });
-      toast("Kolom custom disimpan ke project", "info");
+      toast("Kolom dihitung disimpan — cek Columns to show jika belum muncul di tabel", "info");
     },
     [toast]
   );
@@ -1248,7 +1266,7 @@ export function DashboardApp() {
       loadingMessage={loadingMessage ?? undefined}
       error={error}
       onCreateProject={() => setShowCreateDialog(true)}
-      onOpenSettings={() => setShowSettingsDialog(true)}
+      onOpenSettings={handleOpenProjectSettings}
     />
   );
 
@@ -1445,7 +1463,8 @@ export function DashboardApp() {
                 activeProject={activeProject}
                 onSelect={(p) => handleSelectProject(p)}
                 onCreate={handleNewProject}
-                onSettings={() => setShowSettingsDialog(true)}
+                onSettings={activeProject ? handleOpenProjectSettings : undefined}
+                onEdit={handleEditProject}
                 onDeleted={handleProjectDeleted}
               />
               {inDataDashboard && (
@@ -1491,7 +1510,7 @@ export function DashboardApp() {
               <UserMenu
                 user={auth.user}
                 onLogout={() => void handleLogout()}
-                onOpenSettings={() => setShowSettingsDialog(true)}
+                onOpenSettings={handleOpenProjectSettings}
                 onResetWorkspace={() => void handleResetWorkspace()}
               />
               {sheetData && (
@@ -1520,7 +1539,7 @@ export function DashboardApp() {
                     onRemoveSheet={handleRemoveSheetFromMerge}
                     onToggleMerge={handleToggleMergeMode}
                     onReload={() => void handleRefreshData()}
-                    onOpenSettings={() => setShowSettingsDialog(true)}
+                    onOpenSettings={handleOpenProjectSettings}
                   />
                   <button
                     onClick={() => void handleRefreshData()}
@@ -1718,21 +1737,23 @@ export function DashboardApp() {
         />
       </AppDialog>
 
-      {activeProject && (
+      {(settingsProject ?? activeProject) && (
         <AppDialog
           open={showSettingsDialog}
-          onClose={() => setShowSettingsDialog(false)}
+          onClose={() => {
+            setShowSettingsDialog(false);
+            setSettingsProject(null);
+          }}
           title="Pengaturan project"
           description="Ubah nama, sumber data, dan relasi tabel"
           size="lg"
         >
           <ProjectSettingsDialogContent
-            project={activeProject}
-            sheetColumns={viewData?.columns ?? sheetData?.columns}
+            project={settingsProject ?? activeProject!}
             onUpdated={(p) => void handleProjectSettingsSaved(p)}
             onDeleted={handleProjectDeleted}
             onLoad={() => {
-              void handleProjectReload(activeProject);
+              void handleProjectReload(settingsProject ?? activeProject!);
             }}
             loading={loading}
           />

@@ -1,6 +1,9 @@
-import type { DatabaseConnectionProfile } from "@/lib/types";
+import { analyzeSheetData } from "@/lib/analyzer";
+import type { DatabaseConnectionProfile, ColumnMeta } from "@/lib/types";
 import { connectionToApiPayload } from "@/lib/datasource-storage";
 import { resolveProjectDbTables } from "@/lib/db-table-datasets";
+import type { Project } from "@/lib/project-types";
+import { formatDbTableLabel } from "@/lib/db-table-datasets";
 
 export type SourceType = "sheet" | "database";
 
@@ -119,4 +122,72 @@ export function projectSourceType(project: {
   if (project.sheetUrls.length > 0) return "sheet";
   if (project.activeDbConnectionId && resolveProjectDbTables(project).length > 0) return "database";
   return null;
+}
+
+function columnsFromSampleRows(rows: Record<string, string>[]): ColumnMeta[] {
+  if (!rows.length) return [];
+  return analyzeSheetData(rows, "", new Date().toISOString()).columns;
+}
+
+/** Kolom numerik untuk saran rumus — dari sumber data project yang sedang diedit (bukan dashboard aktif). */
+export async function fetchSourceColumnsForDerivedFields(
+  sourceType: SourceType,
+  sheetUrl: string,
+  connection: DatabaseConnectionProfile | null,
+  tables: string[]
+): Promise<ColumnMeta[]> {
+  try {
+    if (sourceType === "sheet") {
+      const url = sheetUrl.trim();
+      if (!url) return [];
+      const res = await fetch("/api/sheet/probe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, sampleRows: 30 }),
+      });
+      const json = await res.json();
+      if (!res.ok) return [];
+      const sampleRows = Array.isArray(json.sampleRows) ? json.sampleRows : [];
+      return columnsFromSampleRows(sampleRows);
+    }
+
+    if (!connection || tables.length === 0) return [];
+    const res = await fetch("/api/datasource/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(
+        connectionToApiPayload(connection, { table: tables[0], limit: 30 })
+      ),
+    });
+    const json = await res.json();
+    if (!res.ok) return [];
+    const rows = Array.isArray(json.rows) ? json.rows : [];
+    return columnsFromSampleRows(rows);
+  } catch {
+    return [];
+  }
+}
+
+/** Ringkasan sumber data yang sudah tersimpan di project. */
+export function describeProjectSavedSource(
+  project: Project,
+  connections: DatabaseConnectionProfile[]
+): string {
+  const type = projectSourceType(project);
+  if (type === "sheet") {
+    const url = project.sheetUrls[0] ?? "";
+    return url ? `Google Sheet · ${url.slice(0, 48)}${url.length > 48 ? "…" : ""}` : "Google Sheet (belum diisi)";
+  }
+  if (type === "database") {
+    const conn = connections.find((c) => c.id === project.activeDbConnectionId);
+    const tables = resolveProjectDbTables(project);
+    const tablePart = tables.length
+      ? tables.map((t) => formatDbTableLabel(t)).join(", ")
+      : "belum pilih tabel";
+    const connPart = conn
+      ? `${conn.name} (${conn.type}) · schema ${conn.schema || "public"}`
+      : "Database";
+    return `${connPart} · ${tablePart}`;
+  }
+  return "Belum dikonfigurasi";
 }

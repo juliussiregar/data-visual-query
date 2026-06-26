@@ -14,6 +14,7 @@ interface DerivedFieldsEditorProps {
   onSave?: (fields: DerivedField[]) => void | Promise<void>;
   saving?: boolean;
   columns?: ColumnMeta[];
+  columnsLoading?: boolean;
   sourceLabel?: string;
   className?: string;
 }
@@ -24,6 +25,7 @@ export function DerivedFieldsEditor({
   onSave,
   saving,
   columns = [],
+  columnsLoading = false,
   sourceLabel,
   className,
 }: DerivedFieldsEditorProps) {
@@ -66,6 +68,13 @@ export function DerivedFieldsEditor({
 
       {showForm && (
         <div className="mb-3 rounded-lg border border-violet-200 bg-white p-3">
+          {columnsLoading ? (
+            <p className="mb-2 text-[11px] text-slate-500">Memuat kolom dari sumber data project…</p>
+          ) : columns.length === 0 ? (
+            <p className="mb-2 text-[11px] text-amber-800">
+              Isi link sheet atau pilih tabel database di atas agar saran kolom numerik muncul.
+            </p>
+          ) : null}
           <DerivedFieldForm
             baseColumns={columns}
             sourceLabel={sourceLabel}

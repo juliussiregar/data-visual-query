@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { forwardRef, useImperativeHandle, useRef, useState, useMemo } from "react";
 import type { DerivedField } from "@/lib/derived-fields";
 import { buildDerivedFieldHelpText } from "@/lib/derived-fields";
 import type { ColumnMeta, SheetData, WidgetConfig, WidgetDataQuery } from "@/lib/types";
@@ -39,7 +39,11 @@ import { formatDatasetLabel } from "@/lib/table-relations";
 import type { TableRelation } from "@/lib/sql-query-types";
 import { cn } from "@/lib/utils";
 import { getWidgetLayoutWidth, isForcedFullWidth, layoutWidthLabel } from "@/lib/widget-layout";
-import { DerivedColumnQuickAdd } from "./DerivedColumnQuickAdd";
+import { DerivedColumnQuickAdd, type DerivedColumnQuickAddHandle } from "./DerivedColumnQuickAdd";
+
+export interface WidgetDataConfiguratorHandle {
+  commitPendingDerivedField: () => Promise<{ widgetPatch?: Partial<WidgetConfig>; error?: string }>;
+}
 
 interface WidgetDataConfiguratorProps {
   data: SheetData;
@@ -115,18 +119,25 @@ function Section({
   );
 }
 
-export function WidgetDataConfigurator({
-  data,
-  primaryData,
-  dbDatasets,
-  availableTables = [],
-  tableRelations,
-  widget,
-  onChange,
-  derivedFields = [],
-  baseColumns,
-  onDerivedFieldsChange,
-}: WidgetDataConfiguratorProps) {
+export const WidgetDataConfigurator = forwardRef<
+  WidgetDataConfiguratorHandle,
+  WidgetDataConfiguratorProps
+>(function WidgetDataConfigurator(
+  {
+    data,
+    primaryData,
+    dbDatasets,
+    availableTables = [],
+    tableRelations,
+    widget,
+    onChange,
+    derivedFields = [],
+    baseColumns,
+    onDerivedFieldsChange,
+  },
+  ref
+) {
+  const derivedQuickAddRef = useRef<DerivedColumnQuickAddHandle>(null);
   const q: WidgetDataQuery = { ...EMPTY_WIDGET_DATA_QUERY, ...widget.dataQuery };
   const shape = widget.visualShape ? getShapeDef(widget.visualShape) : undefined;
   const columns = getColumnOptions(data.columns);
@@ -140,6 +151,7 @@ export function WidgetDataConfigurator({
   const isRanking = widget.visualShape === "ranking";
   const needsMeasure = needsAggregation && q.aggregation !== "count";
   const selectedColumns = q.displayColumns ?? [];
+  const hiddenDerivedFields = derivedFields.filter((f) => !selectedColumns.includes(f.key));
 
   const sheetDataForTable = (sourceTable: string) =>
     resolveWidgetSheetData(primaryData ?? data, dbDatasets, { sourceTable });
@@ -179,6 +191,50 @@ export function WidgetDataConfigurator({
     }
   };
 
+  useImperativeHandle(ref, () => ({
+    commitPendingDerivedField: async () => {
+      if (!onDerivedFieldsChange) return {};
+      const pending = derivedQuickAddRef.current?.commitPendingDraft();
+      if (!pending) return {};
+      if ("error" in pending) return { error: pending.error };
+      if (derivedFields.some((f) => f.key === pending.key)) {
+        return { error: `Kolom custom "${pending.key}" sudah ada di project` };
+      }
+      await handleAddDerivedField(pending);
+      derivedQuickAddRef.current?.resetAfterCommit();
+      const cols = isTable
+        ? selectedColumns.includes(pending.key)
+          ? selectedColumns
+          : [...selectedColumns, pending.key]
+        : selectedColumns;
+      const widgetPatch = isTable
+        ? patchQuery(widget, { displayColumns: cols })
+        : needsMeasure
+          ? patchQuery(widget, { measureKey: pending.key })
+          : needsGroupBy && !q.groupByKey
+            ? patchQuery(widget, { groupByKey: pending.key })
+            : undefined;
+      return widgetPatch ? { widgetPatch } : {};
+    },
+  }));
+
+  const handleRemoveDerivedField = async (field: DerivedField) => {
+    if (!onDerivedFieldsChange) return;
+    const next = derivedFields.filter((f) => f.id !== field.id);
+    await onDerivedFieldsChange(next);
+
+    const queryPatch: Partial<WidgetDataQuery> = {};
+    if (selectedColumns.includes(field.key)) {
+      queryPatch.displayColumns = selectedColumns.filter((k) => k !== field.key);
+    }
+    if (q.measureKey === field.key) queryPatch.measureKey = undefined;
+    if (q.groupByKey === field.key) queryPatch.groupByKey = undefined;
+    if (q.sort?.columnKey === field.key) queryPatch.sort = null;
+    if (Object.keys(queryPatch).length > 0) {
+      onChange(patchQuery(widget, queryPatch));
+    }
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex gap-2 rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2.5 text-[11px] leading-relaxed text-blue-900">
@@ -204,14 +260,17 @@ export function WidgetDataConfigurator({
         <Section
           title="Kolom dihitung"
           icon={Calculator}
-          hint={`${derivedFieldHint} Langsung tersimpan ke project dan bisa dipilih di widget.`}
-          defaultOpen={derivedFields.length === 0}
+          hint={`${derivedFieldHint} Kolom baru otomatis ditambahkan ke widget tabel ini setelah disimpan.`}
+          defaultOpen={false}
         >
           <DerivedColumnQuickAdd
+            ref={derivedQuickAddRef}
             baseColumns={formulaBaseColumns}
             sourceLabel={derivedSourceLabel}
             fields={derivedFields}
+            validationData={{ columns: formulaBaseColumns, rows: data.rows }}
             onAdd={(field) => void handleAddDerivedField(field)}
+            onRemove={(field) => void handleRemoveDerivedField(field)}
           />
         </Section>
       )}
@@ -355,11 +414,38 @@ export function WidgetDataConfigurator({
         </Section>
       )}
 
+      {isTable && hiddenDerivedFields.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-violet-200 bg-violet-50/70 px-3 py-2.5">
+          <p className="text-[11px] leading-relaxed text-violet-900">
+            Kolom dihitung belum ditampilkan:{" "}
+            <strong className="font-semibold">
+              {hiddenDerivedFields.map((f) => f.name).join(", ")}
+            </strong>
+          </p>
+          <button
+            type="button"
+            onClick={() =>
+              onChange(
+                patchQuery(widget, {
+                  displayColumns: [
+                    ...selectedColumns,
+                    ...hiddenDerivedFields.map((f) => f.key).filter((k) => !selectedColumns.includes(k)),
+                  ],
+                })
+              )
+            }
+            className="shrink-0 rounded-lg border border-violet-300 bg-white px-2.5 py-1 text-[10px] font-semibold text-violet-800 hover:bg-violet-100"
+          >
+            Tampilkan di tabel
+          </button>
+        </div>
+      )}
+
       {isTable && (
         <Section
           title="Columns to show"
           icon={Table2}
-          hint="Pilih kolom yang ditampilkan. Tinggi panel menyesuaikan jumlah baris; tarik handle bawah widget di overview untuk resize manual."
+          hint="Pilih kolom yang ditampilkan. Kolom ungu bertanda custom = kolom dihitung. Tinggi panel menyesuaikan jumlah baris."
         >
           <div className="flex flex-wrap gap-1.5">
             {allCols.map((c) => {
@@ -774,4 +860,4 @@ export function WidgetDataConfigurator({
       </Section>
     </div>
   );
-}
+});

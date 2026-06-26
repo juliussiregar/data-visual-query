@@ -26,7 +26,30 @@ type Token =
   | { kind: "rparen" }
   | { kind: "comma" };
 
-function tokenize(input: string): Token[] {
+
+function matchColumnRefAt(
+  s: string,
+  i: number,
+  columns: ColumnMeta[]
+): { value: string; len: number } | null {
+  const rest = s.slice(i);
+  const candidates = new Set<string>();
+  for (const col of columns) {
+    if (col.key.trim()) candidates.add(col.key);
+    if (col.label.trim()) candidates.add(col.label);
+    if (col.businessLabel?.trim()) candidates.add(col.businessLabel);
+  }
+  const sorted = [...candidates].sort((a, b) => b.length - a.length);
+  for (const name of sorted) {
+    if (!rest.startsWith(name)) continue;
+    const next = rest[name.length];
+    if (next !== undefined && !/[\s+\-*/(),]/.test(next)) continue;
+    return { value: name, len: name.length };
+  }
+  return null;
+}
+
+function tokenize(input: string, columns: ColumnMeta[] = []): Token[] {
   const tokens: Token[] = [];
   let i = 0;
   const s = input.trim();
@@ -66,6 +89,12 @@ function tokenize(input: string): Token[] {
     if (numMatch) {
       tokens.push({ kind: "num", value: parseFloat(numMatch[0]) });
       i += numMatch[0].length;
+      continue;
+    }
+    const colMatch = columns.length ? matchColumnRefAt(s, i, columns) : null;
+    if (colMatch) {
+      tokens.push({ kind: "id", value: colMatch.value });
+      i += colMatch.len;
       continue;
     }
     const idMatch = s.slice(i).match(/^[A-Za-z_][\w]*/);
@@ -162,7 +191,7 @@ export function evaluateRowExpression(
   const trimmed = formula.trim();
   if (!trimmed) return null;
   try {
-    const tokens = tokenize(trimmed);
+    const tokens = tokenize(trimmed, columns);
     const parser = new Parser(tokens, row, columns, (id) => {
       const key = resolveColumnRef(id, columns);
       if (!key) return null;

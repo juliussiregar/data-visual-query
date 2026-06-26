@@ -37,12 +37,19 @@ export async function POST(request: NextRequest) {
     }
 
     const columns = Object.keys(rows[0] ?? {});
+    const sampleLimit =
+      typeof body?.sampleRows === "number" && body.sampleRows > 0
+        ? Math.min(body.sampleRows, 50)
+        : 0;
+    const sampleRows = sampleLimit > 0 ? rows.slice(0, sampleLimit) : undefined;
 
     return NextResponse.json({
       ok: true,
       label,
       rowCount: rows.length,
       columnCount: columns.length,
+      columnKeys: columns,
+      ...(sampleRows ? { sampleRows } : {}),
       message: `Sheet "${label}" dapat dibuka · ${rows.length.toLocaleString("id-ID")} baris · ${columns.length} kolom`,
     });
   } catch (error) {

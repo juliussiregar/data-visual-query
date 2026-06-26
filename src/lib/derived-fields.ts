@@ -44,9 +44,32 @@ export function columnKeysFromFormula(formula: string, columns: ColumnMeta[]): s
   return keys;
 }
 
+/** Wrap column key for formulas when it is not a single identifier (e.g. "math score" → "[math score]"). */
+export function formatColumnRefForFormula(key: string): string {
+  const trimmed = key.trim();
+  if (!trimmed) return key;
+  if (/^[A-Za-z_][\w]*$/.test(trimmed)) return trimmed;
+  return `[${trimmed}]`;
+}
+
+/** Fix legacy formulas that use spaced keys without brackets. */
+export function normalizeFormulaColumnRefs(formula: string, columns: ColumnMeta[]): string {
+  let out = formula.trim();
+  if (!out) return out;
+  const keys = [...columns]
+    .map((c) => c.key)
+    .filter((k) => k && (!/^[A-Za-z_][\w]*$/.test(k) || k.includes(" ")))
+    .sort((a, b) => b.length - a.length);
+  for (const key of keys) {
+    if (out.includes(`[${key}]`)) continue;
+    out = out.split(key).join(`[${key}]`);
+  }
+  return out;
+}
+
 /** Gabungkan kolom dengan penjumlahan (+). */
 export function buildSumFormula(keys: string[]): string {
-  return keys.join(" + ");
+  return keys.map((k) => formatColumnRefForFormula(k)).join(" + ");
 }
 
 /** Rumus hanya penjumlahan kolom tanpa operator lain. */
@@ -84,10 +107,7 @@ export function isFormulaCompatibleWithColumns(
 export function suggestFormulaFromColumns(columns: ColumnMeta[], maxTerms = 3): string {
   const nums = numericColumns(columns);
   if (nums.length === 0) return "";
-  return nums
-    .slice(0, maxTerms)
-    .map((c) => c.key)
-    .join(" + ");
+  return buildSumFormula(nums.slice(0, maxTerms).map((c) => c.key));
 }
 
 /** Saran nama kolom dihitung dari kolom sumber (dinamis per dataset). */
@@ -116,7 +136,7 @@ export function buildDerivedFieldExample(
   const nums = numericColumns(columns);
   if (nums.length === 0) return null;
   const terms = nums.slice(0, maxTerms);
-  const formula = terms.map((c) => c.key).join(" + ");
+  const formula = buildSumFormula(terms.map((c) => c.key));
   const formulaDisplay =
     nums.length > maxTerms ? `${formula} + …` : formula;
   const name = suggestDerivedFieldName(columns);
@@ -226,6 +246,7 @@ export function applyDerivedFields(data: SheetData, fields: DerivedField[]): She
 
   for (const field of ordered) {
     const colExists = columns.some((c) => c.key === field.key);
+    const formula = normalizeFormulaColumnRefs(field.formula, columns);
     if (!colExists) {
       columns.push({
         key: field.key,
@@ -239,7 +260,7 @@ export function applyDerivedFields(data: SheetData, fields: DerivedField[]): She
     }
 
     for (const row of rows) {
-      const value = evaluateRowExpression(field.formula, row, columns);
+      const value = evaluateRowExpression(formula, row, columns);
       row[field.key] = value !== null && Number.isFinite(value) ? String(Math.round(value * 100) / 100) : "";
     }
 
