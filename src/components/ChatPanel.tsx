@@ -19,10 +19,12 @@ import {
   Maximize2,
 } from "lucide-react";
 import type { ChatMessage, SheetData, ViewId, DashboardLayout, DataScope, WidgetProposal, WidgetProposalConfirmResult, WidgetProposalsConfirmResult, AiQueryDataset, SuggestedFollowUp, DashboardAction, DashboardContext } from "@/lib/types";
+import type { TableRelation } from "@/lib/sql-query-types";
 import { describeAction } from "@/lib/chat-actions";
 import type { UserRole } from "@/lib/auth";
 import { getFilterableColumns } from "@/lib/filters";
 import { widgetLabel } from "@/lib/layout";
+import { formatDatasetLabel } from "@/lib/table-relations";
 import {
   CHAT_HISTORY_LIMIT,
   clearChatHistory,
@@ -92,6 +94,9 @@ interface ChatPanelProps {
   userRole: UserRole;
   layout: DashboardLayout;
   sheetUrls: string[];
+  dbDatasets: Record<string, SheetData> | null;
+  activeDbTables: string[];
+  tableRelations?: TableRelation[];
   onApplyActions: (actions: DashboardAction[]) => void;
   onConfirmWidgetProposal: (proposal: WidgetProposal) => WidgetProposalConfirmResult;
   onConfirmWidgetProposals: (proposals: WidgetProposal[]) => WidgetProposalsConfirmResult;
@@ -125,6 +130,9 @@ export function ChatPanel({
   userRole,
   layout,
   sheetUrls,
+  dbDatasets,
+  activeDbTables,
+  tableRelations,
   onApplyActions,
   onConfirmWidgetProposal,
   onConfirmWidgetProposals,
@@ -164,6 +172,17 @@ export function ChatPanel({
 
   const dashboardContext: DashboardContext = useMemo(() => {
     const filterable = getFilterableColumns(data);
+    // Hanya relevan saat project punya >1 tabel — AI perlu tahu tabel mana untuk tiap widget.
+    const availableTables =
+      activeDbTables.length > 1
+        ? activeDbTables.map((name) => ({
+            name,
+            label: formatDatasetLabel(name, tableRelations),
+            columns: (dbDatasets?.[name]?.columns ?? [])
+              .filter((c) => c.key.trim())
+              .map((c) => ({ key: c.key, label: c.label })),
+          }))
+        : undefined;
     return {
       activeView,
       filters,
@@ -188,12 +207,14 @@ export function ChatPanel({
         groupByKey: w.dataQuery?.groupByKey ?? w.categoryKey,
         measureKey: w.dataQuery?.measureKey ?? w.valueKey,
         aggregation: w.dataQuery?.aggregation ?? w.aggregation,
+        sourceTable: w.sourceTable,
       })),
+      availableTables,
       sheetUrls,
       mergeMode: layout.mergeMode,
       editMode: false,
     };
-  }, [data, activeView, filters, dataScope, totalRowCount, userRole, layout, sheetUrls]);
+  }, [data, activeView, filters, dataScope, totalRowCount, userRole, layout, sheetUrls, dbDatasets, activeDbTables, tableRelations]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -866,6 +887,7 @@ export function ChatPanel({
             proposal={previewProposal}
             data={data}
             layout={layout}
+            dbDatasets={dbDatasets}
             onClose={() => {
               setPreviewProposal(null);
               setPreviewMessageIndex(null);

@@ -32,9 +32,21 @@ function buildDashboardContextBlock(ctx: DashboardContext | undefined): string {
   const widgetLines = ctx.layoutWidgets
     .map(
       (w) =>
-        `- id:${w.id} | ${w.title} | bentuk:${w.visualShape ?? "?"} | visible:${w.visible}${w.groupByKey ? ` | grup:${w.groupByKey}` : ""}${w.measureKey ? ` | ukur:${w.measureKey}` : ""}${w.aggregation ? ` | agregasi:${w.aggregation}` : ""}`
+        `- id:${w.id} | ${w.title} | bentuk:${w.visualShape ?? "?"} | visible:${w.visible}${w.groupByKey ? ` | grup:${w.groupByKey}` : ""}${w.measureKey ? ` | ukur:${w.measureKey}` : ""}${w.aggregation ? ` | agregasi:${w.aggregation}` : ""}${w.sourceTable ? ` | tabel:${w.sourceTable}` : ""}`
     )
     .join("\n");
+
+  const tablesBlock = ctx.availableTables?.length
+    ? `\n\nTabel tersedia (project multi-tabel) — saat membuat/mengubah widget WAJIB set "sourceTable" ke nama tabel yang kolomnya dipakai:
+${ctx.availableTables
+        .map(
+          (t) =>
+            `- ${t.name}${t.label && t.label !== t.name ? ` (${t.label})` : ""} → kolom: ${t.columns
+              .map((c) => c.key)
+              .join(", ") || "—"}`
+        )
+        .join("\n")}`
+    : "";
 
   return `\n\n--- DASHBOARD CONTEXT ---
 View aktif: ${ctx.activeView}
@@ -53,7 +65,7 @@ ${filterLines}
 Grafik auto-detect: ${ctx.chartTitles.join("; ")}
 
 Layout widgets:
-${widgetLines}${widgetCoaching}`;
+${widgetLines}${widgetCoaching}${tablesBlock}`;
 }
 
 export async function POST(request: NextRequest) {

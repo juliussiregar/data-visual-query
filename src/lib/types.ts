@@ -235,6 +235,8 @@ export interface WidgetProposal {
   widgetId?: string;
   /** Referensi natural: judul widget, bentuk, atau id parsial — alternatif widgetId */
   widgetRef?: string;
+  /** Tabel sumber untuk widget ini bila project punya >1 tabel (lihat availableTables di context) */
+  sourceTable?: string;
   visualShape?: WidgetVisualShape;
   title?: string;
   layoutWidth?: "full" | "half";
@@ -462,6 +464,14 @@ export interface DashboardContext {
     groupByKey?: string;
     measureKey?: string;
     aggregation?: string;
+    /** Tabel sumber widget bila project multi-tabel */
+    sourceTable?: string;
+  }[];
+  /** Tabel yang tersedia (project multi-tabel). Kosong/undefined = hanya satu tabel. */
+  availableTables?: {
+    name: string;
+    label: string;
+    columns: { key: string; label: string }[];
   }[];
   sheetUrls: string[];
   mergeMode: boolean;

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Eye, X, AlertCircle } from "lucide-react";
 import type { SheetData, WidgetProposal } from "@/lib/types";
-import { normalizeWidgetProposal, buildWidgetConfigFromProposal, validateWidgetProposal, describeWidgetProposal } from "@/lib/widget-proposal";
+import { normalizeWidgetProposal, buildWidgetConfigFromProposal, validateWidgetProposal, describeWidgetProposal, proposalSheetData } from "@/lib/widget-proposal";
 import { widgetPreviewSummary } from "@/lib/widget-data";
 import { WidgetPreview } from "./WidgetPreview";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,8 @@ interface ChatWidgetPreviewModalProps {
   proposal: WidgetProposal;
   data: SheetData;
   layout: DashboardLayout;
+  /** Datasets per tabel (project multi-tabel) untuk preview tabel sumber yang benar */
+  dbDatasets?: Record<string, SheetData> | null;
   onClose: () => void;
   /** Tanpa onConfirm → modal jadi view-only (mis. preview dari daftar multi-widget). */
   onConfirm?: () => void;
@@ -26,6 +28,7 @@ export function ChatWidgetPreviewModal({
   proposal,
   data,
   layout,
+  dbDatasets,
   onClose,
   onReject,
   onConfirm,
@@ -49,8 +52,10 @@ export function ChatWidgetPreviewModal({
 
   const isDelete = proposal.operation === "delete";
   const resolved = normalizeWidgetProposal(proposal, layout, data);
-  const draft = isDelete ? null : buildWidgetConfigFromProposal(resolved, data, layout);
-  const validationError = validateWidgetProposal(resolved, data, layout);
+  // Preview & validasi memakai dataset tabel sumber widget (project multi-tabel).
+  const tableData = proposalSheetData(resolved, data, layout, dbDatasets);
+  const draft = isDelete ? null : buildWidgetConfigFromProposal(resolved, data, layout, dbDatasets);
+  const validationError = validateWidgetProposal(resolved, data, layout, dbDatasets);
   const canConfirm = !validationError && (isDelete || draft !== null);
 
   return createPortal(
@@ -111,9 +116,9 @@ export function ChatWidgetPreviewModal({
             </div>
           ) : draft ? (
             <div className="space-y-3">
-              <p className="text-xs text-slate-500">{widgetPreviewSummary(data, draft)}</p>
+              <p className="text-xs text-slate-500">{widgetPreviewSummary(tableData, draft)}</p>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <WidgetPreview data={data} widget={draft} />
+                <WidgetPreview data={tableData} widget={draft} />
               </div>
             </div>
           ) : null}

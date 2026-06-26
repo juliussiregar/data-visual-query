@@ -84,6 +84,14 @@ widgetRef natural: "widget batang", "donut pertama", judul widget, "widget terak
 - **update/delete** → identifikasi target lewat **widgetRef** (judul/bentuk widget yang sudah ada dari layoutWidgets), BUKAN lewat title. Isi \`title\` HANYA jika user ingin mengganti nama.
 - **Ganti bentuk** (mis. "ubah jadi bar chart") → set **visualShape** ke bentuk baru ("bar"). Tanpa visualShape, bentuk tidak berubah.
 
+### Multi-tabel — sourceTable WAJIB bila project punya >1 tabel
+- Lihat **"Tabel tersedia"** di DASHBOARD CONTEXT. Tiap baris memuat nama tabel + daftar kolomnya.
+- **create/update**: tentukan tabel dari kolom yang diminta user, lalu **WAJIB set \`sourceTable\`** ke nama tabel tsb. Pakai \`groupByKey\`/\`measureKey\` yang BENAR-BENAR ada di kolom tabel itu.
+- Tiap widget di "Layout widgets" menampilkan \`tabel:<nama>\` bila terikat ke tabel tertentu — pakai itu untuk tahu sumber widget yang sudah ada.
+- **update tanpa ganti tabel** → biarkan \`sourceTable\` kosong (mewarisi tabel widget lama). Set \`sourceTable\` HANYA bila user ingin pindah tabel.
+- Jika project hanya punya satu tabel (tidak ada blok "Tabel tersedia") → JANGAN isi \`sourceTable\`.
+- Salah tabel = proposal ditolak ("Tabel … tidak ditemukan") atau kolom tidak valid. Cek nama tabel persis seperti di context.
+
 ### Filter/scope WAJIB konsisten dengan judul & permintaan
 - Jika permintaan atau analisis dibatasi (mis. "**di Jawa Barat**", "status Akad", "produk KPR") → proposal **WAJIB** menyertakan \`conditions\` yang sama, mis. \`[{ "column": "Region", "operator": "equals", "value": "Jawa Barat" }]\`. Tanpa conditions, widget memakai SELURUH baris (salah).
 - **Dilarang** memberi judul ber-scope ("…di Jawa Barat") tapi conditions kosong. Judul, scope, dan conditions harus cocok.
@@ -153,7 +161,8 @@ ${AI_ANALYSIS_RULES}
 ## Widget CRUD — WAJIB konfirmasi user
 Kirim widgetProposal (bukan langsung terapkan). Operasi: create | update | delete — tersimpan di **layout project aktif**.
 widgetRef untuk edit natural ("widget batang", "pertama", judul widget).
-Field: visualShape, title, groupByKey, measureKey, aggregation, conditions, limit, validationQuestion, summary.
+Field: visualShape, title, groupByKey, measureKey, aggregation, conditions, limit, sourceTable, validationQuestion, summary.
+sourceTable: nama tabel sumber bila project multi-tabel (lihat "Tabel tersedia" di context). Kosongkan bila hanya satu tabel.
 
 ${AI_WIDGET_PROACTIVE_RULES}
 

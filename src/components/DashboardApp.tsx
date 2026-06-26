@@ -1057,7 +1057,7 @@ export function DashboardApp() {
       if (!dataForWidget) return { ok: false };
 
       const snapshot = cloneLayout(layout);
-      const { layout: next, error } = applyWidgetProposal(layout, dataForWidget, proposal);
+      const { layout: next, error } = applyWidgetProposal(layout, dataForWidget, proposal, dbDatasets);
       if (error) {
         toast(error);
         return { ok: false };
@@ -1082,7 +1082,7 @@ export function DashboardApp() {
       );
       return { ok: true, layoutSnapshot: snapshot };
     },
-    [layout, perms.canEditLayout, viewData, sheetData, flushSave, userRole, toast]
+    [layout, perms.canEditLayout, viewData, sheetData, dbDatasets, flushSave, userRole, toast]
   );
 
   const handleConfirmWidgetProposals = useCallback(
@@ -1098,7 +1098,7 @@ export function DashboardApp() {
       const errors: string[] = [];
       let applied = 0;
       for (const proposal of proposals) {
-        const { layout: next, error } = applyWidgetProposal(working, dataForWidget, proposal);
+        const { layout: next, error } = applyWidgetProposal(working, dataForWidget, proposal, dbDatasets);
         if (error) {
           errors.push(error);
           continue;
@@ -1122,7 +1122,7 @@ export function DashboardApp() {
       );
       return { ok: true, appliedCount: applied, errors, layoutSnapshot: snapshot };
     },
-    [layout, perms.canEditLayout, viewData, sheetData, flushSave, userRole, toast]
+    [layout, perms.canEditLayout, viewData, sheetData, dbDatasets, flushSave, userRole, toast]
   );
 
   const handleUndoWidgetLayout = useCallback(
@@ -1569,6 +1569,9 @@ export function DashboardApp() {
               userRole={userRole}
               layout={layout}
               sheetUrls={sheetUrls}
+              dbDatasets={dbDatasets}
+              activeDbTables={activeDbTables}
+              tableRelations={activeProject?.tableRelations}
               onApplyActions={applyChatActions}
               onConfirmWidgetProposal={handleConfirmWidgetProposal}
               onConfirmWidgetProposals={handleConfirmWidgetProposals}
