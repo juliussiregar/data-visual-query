@@ -96,7 +96,7 @@ export function MetricsLibraryPanel({
             </button>
           </div>
           <p className="mt-2 text-[10px] text-slate-500">
-            Didukung: COUNT(*), SUM(col), AVG(col), colA + colB, colA / colB
+            Didukung: COUNT(*), SUM(col), AVG(col), MIN/MAX(col), ekspresi multi-kolom (A + B + C), colA / colB
           </p>
         </div>
       )}

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Eye, X, AlertCircle } from "lucide-react";
 import type { SheetData, WidgetProposal } from "@/lib/types";
-import { normalizeWidgetProposal, buildWidgetConfigFromProposal, validateWidgetProposal, describeWidgetProposal } from "@/lib/widget-proposal";
+import { normalizeWidgetProposal, buildWidgetConfigFromProposal, validateWidgetProposal, describeWidgetProposal, proposalSheetData } from "@/lib/widget-proposal";
 import { widgetPreviewSummary } from "@/lib/widget-data";
 import { WidgetPreview } from "./WidgetPreview";
 import { cn } from "@/lib/utils";
@@ -15,9 +15,12 @@ interface ChatWidgetPreviewModalProps {
   proposal: WidgetProposal;
   data: SheetData;
   layout: DashboardLayout;
+  /** Datasets per tabel (project multi-tabel) untuk preview tabel sumber yang benar */
+  dbDatasets?: Record<string, SheetData> | null;
   onClose: () => void;
-  onConfirm: () => void;
-  onReject: () => void;
+  /** Tanpa onConfirm → modal jadi view-only (mis. preview dari daftar multi-widget). */
+  onConfirm?: () => void;
+  onReject?: () => void;
 }
 
 export function ChatWidgetPreviewModal({
@@ -25,6 +28,7 @@ export function ChatWidgetPreviewModal({
   proposal,
   data,
   layout,
+  dbDatasets,
   onClose,
   onReject,
   onConfirm,
@@ -48,8 +52,10 @@ export function ChatWidgetPreviewModal({
 
   const isDelete = proposal.operation === "delete";
   const resolved = normalizeWidgetProposal(proposal, layout, data);
-  const draft = isDelete ? null : buildWidgetConfigFromProposal(resolved, data, layout);
-  const validationError = validateWidgetProposal(resolved, data, layout);
+  // Preview & validasi memakai dataset tabel sumber widget (project multi-tabel).
+  const tableData = proposalSheetData(resolved, data, layout, dbDatasets);
+  const draft = isDelete ? null : buildWidgetConfigFromProposal(resolved, data, layout, dbDatasets);
+  const validationError = validateWidgetProposal(resolved, data, layout, dbDatasets);
   const canConfirm = !validationError && (isDelete || draft !== null);
 
   return createPortal(
@@ -110,42 +116,54 @@ export function ChatWidgetPreviewModal({
             </div>
           ) : draft ? (
             <div className="space-y-3">
-              <p className="text-xs text-slate-500">{widgetPreviewSummary(data, draft)}</p>
+              <p className="text-xs text-slate-500">{widgetPreviewSummary(tableData, draft)}</p>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <WidgetPreview data={data} widget={draft} />
+                <WidgetPreview data={tableData} widget={draft} />
               </div>
             </div>
           ) : null}
         </div>
 
         <div className="flex shrink-0 flex-col gap-2 border-t border-slate-200 bg-white px-5 py-4 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={() => {
-              onReject();
-              onClose();
-            }}
-            className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            Belum sesuai — ubah lagi
-          </button>
-          <button
-            type="button"
-            disabled={!canConfirm}
-            onClick={() => {
-              onConfirm();
-              onClose();
-            }}
-            className={cn(
-              "flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all",
-              canConfirm
-                ? "bg-gradient-to-br from-emerald-500 to-emerald-600 hover:shadow-emerald-500/30"
-                : "cursor-not-allowed bg-slate-300"
-            )}
-          >
-            <Check className="h-4 w-4" />
-            {isDelete ? "Ya, hapus widget" : "Ya, terapkan ke dashboard"}
-          </button>
+          {onConfirm ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  onReject?.();
+                  onClose();
+                }}
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Belum sesuai — ubah lagi
+              </button>
+              <button
+                type="button"
+                disabled={!canConfirm}
+                onClick={() => {
+                  onConfirm();
+                  onClose();
+                }}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all",
+                  canConfirm
+                    ? "bg-gradient-to-br from-emerald-500 to-emerald-600 hover:shadow-emerald-500/30"
+                    : "cursor-not-allowed bg-slate-300"
+                )}
+              >
+                <Check className="h-4 w-4" />
+                {isDelete ? "Ya, hapus widget" : "Ya, terapkan ke dashboard"}
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Tutup
+            </button>
+          )}
         </div>
       </div>
     </div>,

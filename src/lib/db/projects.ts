@@ -6,6 +6,8 @@ import {
   syncLegacyActiveDbTable,
 } from "@/lib/db-table-datasets";
 import { normalizeTableRelations } from "@/lib/table-relations";
+import { normalizeDerivedFields } from "@/lib/derived-fields";
+import type { DerivedField } from "@/lib/derived-fields";
 import type { TableRelation } from "@/lib/sql-query-types";
 import type { Prisma } from "@prisma/client";
 import { Prisma as PrismaRuntime } from "@prisma/client";
@@ -61,6 +63,7 @@ function toProject(row: {
   activeDbTable: string | null;
   activeDbTables: unknown;
   tableRelations: unknown;
+  derivedFields?: unknown;
   layoutJson: unknown;
   lastOpenedAt: Date;
   createdAt: Date;
@@ -77,6 +80,7 @@ function toProject(row: {
     activeDbTable: row.activeDbTable,
     activeDbTables: parseStringArray(row.activeDbTables),
     tableRelations: normalizeTableRelations(row.tableRelations),
+    derivedFields: normalizeDerivedFields(row.derivedFields ?? []),
     layout: (row.layoutJson as DashboardLayout | null) ?? null,
     lastOpenedAt: row.lastOpenedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
@@ -109,6 +113,7 @@ export interface ProjectUpsertInput {
   activeDbTable?: string | null;
   activeDbTables?: string[];
   tableRelations?: TableRelation[];
+  derivedFields?: DerivedField[];
   layout?: DashboardLayout | null;
   touchOpened?: boolean;
 }
@@ -121,18 +126,30 @@ function isUnknownPrismaFieldError(error: unknown, field: string): boolean {
   );
 }
 
+function stripUnknownProjectFields(data: Prisma.ProjectCreateInput): Prisma.ProjectCreateInput {
+  const copy = { ...data } as Record<string, unknown>;
+  for (const field of ["tableRelations", "derivedFields"]) {
+    if (field in copy) delete copy[field];
+  }
+  return copy as Prisma.ProjectCreateInput;
+}
+
 async function createProjectRow(data: Prisma.ProjectCreateInput) {
   const prisma = getPrisma();
   try {
     return await prisma.project.create({ data });
   } catch (error) {
-    if (!isUnknownPrismaFieldError(error, "tableRelations")) throw error;
+    if (
+      !isUnknownPrismaFieldError(error, "tableRelations") &&
+      !isUnknownPrismaFieldError(error, "derivedFields")
+    ) {
+      throw error;
+    }
     resetPrismaClient();
-    const { tableRelations: _removed, ...rest } = data;
     console.warn(
-      "[projects] Prisma client usang — simpan tanpa tableRelations. Jalankan ulang `npm run dev` setelah migration."
+      "[projects] Prisma client usang — simpan tanpa tableRelations/derivedFields. Jalankan ulang `npm run dev` setelah migration."
     );
-    return await getPrisma().project.create({ data: rest });
+    return await getPrisma().project.create({ data: stripUnknownProjectFields(data) });
   }
 }
 
@@ -141,13 +158,23 @@ async function updateProjectRow(projectId: string, data: Prisma.ProjectUpdateInp
   try {
     return await prisma.project.update({ where: { id: projectId }, data });
   } catch (error) {
-    if (!isUnknownPrismaFieldError(error, "tableRelations")) throw error;
+    if (
+      !isUnknownPrismaFieldError(error, "tableRelations") &&
+      !isUnknownPrismaFieldError(error, "derivedFields")
+    ) {
+      throw error;
+    }
     resetPrismaClient();
-    const { tableRelations: _removed, ...rest } = data;
     console.warn(
-      "[projects] Prisma client usang — update tanpa tableRelations. Jalankan ulang `npm run dev` setelah migration."
+      "[projects] Prisma client usang — update tanpa tableRelations/derivedFields. Jalankan ulang `npm run dev` setelah migration."
     );
-    return await getPrisma().project.update({ where: { id: projectId }, data: rest });
+    const rest = { ...data } as Record<string, unknown>;
+    delete rest.tableRelations;
+    delete rest.derivedFields;
+    return await getPrisma().project.update({
+      where: { id: projectId },
+      data: rest as Prisma.ProjectUpdateInput,
+    });
   }
 }
 
@@ -162,6 +189,7 @@ export async function createUserProject(
   const activeDbTables = tables.length > 0 ? tables : legacyTable ? [legacyTable] : [];
   const activeDbTable = syncLegacyActiveDbTable(activeDbTables) ?? legacyTable;
   const normalizedRelations = normalizeTableRelations(initial?.tableRelations ?? []);
+  const normalizedDerived = normalizeDerivedFields(initial?.derivedFields ?? []);
 
   const data: Prisma.ProjectCreateInput = {
     user: { connect: { id: userId } },
@@ -176,6 +204,11 @@ export async function createUserProject(
     ...(normalizedRelations.length > 0
       ? {
           tableRelations: normalizedRelations as unknown as Prisma.InputJsonValue,
+        }
+      : {}),
+    ...(normalizedDerived.length > 0
+      ? {
+          derivedFields: normalizedDerived as unknown as Prisma.InputJsonValue,
         }
       : {}),
     ...(initial?.layout !== undefined
@@ -223,6 +256,11 @@ export async function updateUserProject(
     if (normalized.length > 0) {
       data.tableRelations = normalized as unknown as Prisma.InputJsonValue;
     }
+  }
+  if (input.derivedFields !== undefined) {
+    data.derivedFields = normalizeDerivedFields(
+      input.derivedFields
+    ) as unknown as Prisma.InputJsonValue;
   }
   if (input.layout !== undefined) {
     data.layoutJson =

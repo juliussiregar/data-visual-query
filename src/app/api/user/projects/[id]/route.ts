@@ -67,6 +67,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (Array.isArray(body.tableRelations)) {
       input.tableRelations = body.tableRelations;
     }
+    if (Array.isArray(body.derivedFields)) {
+      input.derivedFields = body.derivedFields;
+    }
     if (body.layout === null) {
       input.layout = null;
     } else if (body.layout && (body.layout as DashboardLayout).version === 1) {

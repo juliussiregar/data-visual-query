@@ -10,7 +10,8 @@ import type {
 } from "./types";
 import { aggregateData, CHART_COLORS } from "./aggregation";
 import { applyVisualQuery, type VisualQuery } from "./visual-query";
-import { formatNumber, parseNumber } from "./format";
+import { formatNumber, parseNumber, inferColumnIsCurrency } from "./format";
+import { chartConfigFromVisualSqlResult, executeVisualSql } from "./visual-sql";
 
 export const EMPTY_WIDGET_DATA_QUERY: WidgetDataQuery = {
   conditions: [],
@@ -52,7 +53,23 @@ function resolvedQuery(widget: WidgetConfig): WidgetDataQuery {
   };
 }
 
+export function buildChartFromVisualSqlWidget(data: SheetData, widget: WidgetConfig): ChartConfig | null {
+  const sql = widget.dataQuery?.visualSql;
+  if (!sql?.trim()) return null;
+  const result = executeVisualSql(data, sql);
+  if (result.error || !result.chart) return null;
+  return chartConfigFromVisualSqlResult(
+    result,
+    data.columns,
+    widget.chartType ?? shapeToChartType(widget.visualShape) ?? "bar",
+    widget.chartId ?? widget.id
+  );
+}
+
 export function buildChartFromWidget(data: SheetData, widget: WidgetConfig): ChartConfig | null {
+  const visualSqlChart = buildChartFromVisualSqlWidget(data, widget);
+  if (visualSqlChart) return visualSqlChart;
+
   const rows = getWidgetRows(data, widget);
   const q = resolvedQuery(widget);
   const groupBy = q.groupByKey ?? data.columns.find((c) => c.type === "category")?.key;
@@ -77,6 +94,9 @@ export function buildChartFromWidget(data: SheetData, widget: WidgetConfig): Cha
   const limit = q.limit ?? 12;
   const chartType = widget.chartType ?? shapeToChartType(widget.visualShape) ?? "bar";
   const catLabel = data.columns.find((c) => c.key === groupBy)?.label ?? groupBy;
+  const measureCol = measure ? data.columns.find((c) => c.key === measure) : undefined;
+  const valueFormat =
+    measureCol && inferColumnIsCurrency(measureCol) ? ("currency" as const) : ("number" as const);
 
   return {
     id: widget.chartId ?? widget.id,
@@ -87,6 +107,7 @@ export function buildChartFromWidget(data: SheetData, widget: WidgetConfig): Cha
     aggregation: q.aggregation,
     data: chartData.slice(0, limit),
     description: `${AGGREGATION_LABELS[q.aggregation]} · ${catLabel}`,
+    valueFormat,
   };
 }
 
@@ -255,6 +276,78 @@ export function computeTableSummaryRow(
   return result;
 }
 
+export function buildTableFromVisualSqlWidget(
+  data: SheetData,
+  widget: WidgetConfig
+): {
+  rows: Record<string, string>[];
+  columns: ColumnMeta[];
+  summaryRow?: Record<string, string>;
+  totalRows: number;
+} | null {
+  const sql = widget.dataQuery?.visualSql;
+  if (!sql?.trim()) return null;
+
+  const result = executeVisualSql(data, sql);
+  if (result.error || !result.rows.length) return null;
+
+  const keys =
+    widget.dataQuery?.displayColumns?.filter(Boolean) ??
+    Object.keys(result.rows[0]);
+
+  const columns: ColumnMeta[] = keys.map((key) => {
+    const sample = result.rows.find((row) => row[key] !== "" && row[key] !== undefined)?.[key];
+    const num = typeof sample === "number" ? sample : parseNumber(String(sample ?? ""));
+    return {
+      key,
+      label: key,
+      type: num !== null ? ("number" as const) : ("category" as const),
+      uniqueCount: 0,
+      sampleValues: [],
+      fillRate: 100,
+    };
+  });
+
+  const rows = result.rows.map((row) =>
+    Object.fromEntries(
+      keys.map((key) => {
+        const value = row[key];
+        return [key, value === null || value === undefined ? "" : String(value)];
+      })
+    )
+  );
+
+  const q = resolvedQuery(widget);
+  if (q.sort?.columnKey) {
+    const key = q.sort.columnKey;
+    const dir = q.sort.direction === "asc" ? 1 : -1;
+    rows.sort((a, b) => {
+      const av = a[key] ?? "";
+      const bv = b[key] ?? "";
+      const an = parseFloat(av.replace(/[^\d.-]/g, ""));
+      const bn = parseFloat(bv.replace(/[^\d.-]/g, ""));
+      if (Number.isFinite(an) && Number.isFinite(bn)) return (an - bn) * dir;
+      return av.localeCompare(bv, undefined, { numeric: true }) * dir;
+    });
+  }
+
+  const limit = q.limit;
+  const limitedRows = limit ? rows.slice(0, limit) : rows;
+
+  const displayCols = columns.filter((c) => keys.includes(c.key));
+  const summaryRow =
+    q.tableSummary?.enabled && displayCols.length > 0
+      ? computeTableSummaryRow(limitedRows, displayCols, q.tableSummary)
+      : undefined;
+
+  return {
+    rows: limitedRows,
+    columns: displayCols,
+    summaryRow,
+    totalRows: limitedRows.length,
+  };
+}
+
 export function buildTableFromWidget(
   data: SheetData,
   widget: WidgetConfig
@@ -264,6 +357,9 @@ export function buildTableFromWidget(
   summaryRow?: Record<string, string>;
   totalRows: number;
 } {
+  const fromQuery = buildTableFromVisualSqlWidget(data, widget);
+  if (fromQuery) return fromQuery;
+
   const q = resolvedQuery(widget);
   let rows = getWidgetRows(data, widget);
 
@@ -309,8 +405,26 @@ function shapeToChartType(shape?: WidgetVisualShape): ChartType | undefined {
       return "line";
     case "donut":
       return "donut";
+    case "distribution":
+      return "horizontalBar";
     default:
       return undefined;
+  }
+}
+
+/** Map chart type dari gallery ke visual shape widget dashboard. */
+export function chartTypeToVisualShape(chartType: ChartType): WidgetVisualShape {
+  switch (chartType) {
+    case "line":
+    case "area":
+      return "line";
+    case "pie":
+    case "donut":
+      return "donut";
+    case "horizontalBar":
+      return "distribution";
+    default:
+      return "bar";
   }
 }
 
@@ -319,6 +433,11 @@ export function widgetPreviewSummary(data: SheetData, widget: WidgetConfig): str
   const q = resolvedQuery(widget);
 
   if (widget.visualShape === "table") {
+    if (q.visualSql) {
+      const fromQuery = buildTableFromVisualSqlWidget(data, widget);
+      const colCount = fromQuery?.columns.length ?? q.displayColumns?.length ?? 0;
+      return `${(fromQuery?.totalRows ?? 0).toLocaleString()} baris hasil query · ${colCount} kolom`;
+    }
     const colCount = q.displayColumns?.length ?? Math.min(6, data.columns.length);
     const summary = q.tableSummary?.enabled
       ? ` · ${q.tableSummary.label ?? AGGREGATION_LABELS[q.tableSummary.aggregation]} row`
@@ -370,7 +489,7 @@ export function validateWidgetConfig(
     }
   }
 
-  if (shape === "table" && (!q.displayColumns || q.displayColumns.length === 0)) {
+  if (shape === "table" && (!q.displayColumns || q.displayColumns.length === 0) && !q.visualSql) {
     return "Select at least one column to display.";
   }
 

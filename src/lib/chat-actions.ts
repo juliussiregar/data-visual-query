@@ -106,22 +106,25 @@ export function applyLayoutActions(
         break;
       case "add_sheet":
         if (!next.sheetUrls.includes(action.url)) {
+          const sheetUrls = [...next.sheetUrls, action.url];
           next = {
             ...next,
-            sheetUrls: [...next.sheetUrls, action.url],
-            mergeMode: next.sheetUrls.length >= 1,
+            sheetUrls,
+            mergeMode: sheetUrls.length > 1,
             updatedAt: new Date().toISOString(),
           };
         }
         break;
-      case "remove_sheet":
+      case "remove_sheet": {
+        const sheetUrls = next.sheetUrls.filter((u) => u !== action.url);
         next = {
           ...next,
-          sheetUrls: next.sheetUrls.filter((u) => u !== action.url),
-          mergeMode: next.sheetUrls.length > 2,
+          sheetUrls,
+          mergeMode: sheetUrls.length > 1,
           updatedAt: new Date().toISOString(),
         };
         break;
+      }
       case "reset_layout":
         break;
       default:
@@ -176,6 +179,8 @@ export function describeAction(
       return action.enabled ? "Aktifkan gabung sheet" : "Matikan gabung sheet";
     case "reset_layout":
       return "Reset layout default";
+    case "add_derived_field":
+      return `Buat kolom dihitung "${action.name}"`;
     default:
       return "Update dashboard";
   }

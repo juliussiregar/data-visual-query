@@ -2,12 +2,16 @@ import type OpenAI from "openai";
 import type { AiQueryDataset, AiQueryFact } from "./types";
 import { findColumnKey } from "./chat-actions";
 import { aggregateData } from "./aggregation";
-import { parseNumber, formatNumber, formatCurrency } from "./format";
+import { parseNumber, formatNumber, formatCurrency, inferColumnIsCurrency, formatDisplayValue } from "./format";
 import {
   applyVisualQuery,
+  QUERY_OPERATORS,
   type QueryOperator,
   type VisualQuery,
 } from "./visual-query";
+import { executeVisualSql } from "./visual-sql";
+import type { SheetData } from "./types";
+import { validateNewDerivedField } from "./derived-fields";
 
 export type AiToolName =
   | "count_rows"
@@ -16,22 +20,9 @@ export type AiToolName =
   | "top_rows"
   | "distinct_values"
   | "compare_groups"
-  | "column_stats";
-
-const OPERATORS: QueryOperator[] = [
-  "equals",
-  "not_equals",
-  "contains",
-  "not_contains",
-  "starts_with",
-  "gt",
-  "gte",
-  "lt",
-  "lte",
-  "between",
-  "is_empty",
-  "is_not_empty",
-];
+  | "column_stats"
+  | "run_visual_sql"
+  | "create_derived_field";
 
 type FilterInput = {
   column: string;
@@ -49,6 +40,10 @@ function columnLabel(dataset: AiQueryDataset, key: string): string {
   return col?.businessLabel ?? col?.label ?? key;
 }
 
+function isSensitive(dataset: AiQueryDataset, key: string): boolean {
+  return dataset.columns.find((c) => c.key === key)?.sensitive ?? false;
+}
+
 function filtersToQuery(
   dataset: AiQueryDataset,
   filters?: FilterInput[],
@@ -58,7 +53,7 @@ function filtersToQuery(
     .map((f, i) => {
       const columnKey = resolveColumn(dataset, f.column);
       if (!columnKey) return null;
-      const op = OPERATORS.includes(f.operator as QueryOperator)
+      const op = QUERY_OPERATORS.includes(f.operator as QueryOperator)
         ? (f.operator as QueryOperator)
         : "equals";
       return {
@@ -90,13 +85,9 @@ function formatAggValue(
   dataset?: AiQueryDataset
 ): string {
   const col = columnKey && dataset ? dataset.columns.find((c) => c.key === columnKey) : undefined;
-  const isMoney =
-    col?.label.toLowerCase().includes("plafond") ||
-    col?.label.toLowerCase().includes("rupiah") ||
-    col?.label.toLowerCase().includes("nominal");
   if (aggregation === "count") return String(Math.round(value));
-  if (isMoney) return formatCurrency(value);
-  return Number.isInteger(value) ? formatNumber(value) : formatNumber(value);
+  if (col && inferColumnIsCurrency(col)) return formatCurrency(value);
+  return formatDisplayValue(value);
 }
 
 function aggregateOnRows(
@@ -153,7 +144,7 @@ export const AI_QUERY_TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = [
                 column: { type: "string", description: "Nama atau key kolom" },
                 operator: {
                   type: "string",
-                  enum: OPERATORS,
+                  enum: QUERY_OPERATORS,
                 },
                 value: { type: "string" },
                 value_to: { type: "string", description: "Untuk operator between" },
@@ -189,7 +180,7 @@ export const AI_QUERY_TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = [
               type: "object",
               properties: {
                 column: { type: "string" },
-                operator: { type: "string", enum: OPERATORS },
+                operator: { type: "string", enum: QUERY_OPERATORS },
                 value: { type: "string" },
                 value_to: { type: "string" },
               },
@@ -223,7 +214,7 @@ export const AI_QUERY_TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = [
               type: "object",
               properties: {
                 column: { type: "string" },
-                operator: { type: "string", enum: OPERATORS },
+                operator: { type: "string", enum: QUERY_OPERATORS },
                 value: { type: "string" },
               },
               required: ["column"],
@@ -253,7 +244,7 @@ export const AI_QUERY_TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = [
               type: "object",
               properties: {
                 column: { type: "string" },
-                operator: { type: "string", enum: OPERATORS },
+                operator: { type: "string", enum: QUERY_OPERATORS },
                 value: { type: "string" },
               },
               required: ["column"],
@@ -285,7 +276,7 @@ export const AI_QUERY_TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = [
               type: "object",
               properties: {
                 column: { type: "string" },
-                operator: { type: "string", enum: OPERATORS },
+                operator: { type: "string", enum: QUERY_OPERATORS },
                 value: { type: "string" },
               },
               required: ["column"],
@@ -312,7 +303,7 @@ export const AI_QUERY_TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = [
               type: "object",
               properties: {
                 column: { type: "string" },
-                operator: { type: "string", enum: OPERATORS },
+                operator: { type: "string", enum: QUERY_OPERATORS },
                 value: { type: "string" },
               },
               required: ["column", "value"],
@@ -325,7 +316,7 @@ export const AI_QUERY_TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = [
               type: "object",
               properties: {
                 column: { type: "string" },
-                operator: { type: "string", enum: OPERATORS },
+                operator: { type: "string", enum: QUERY_OPERATORS },
                 value: { type: "string" },
               },
               required: ["column", "value"],
@@ -356,7 +347,7 @@ export const AI_QUERY_TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = [
               type: "object",
               properties: {
                 column: { type: "string" },
-                operator: { type: "string", enum: OPERATORS },
+                operator: { type: "string", enum: QUERY_OPERATORS },
                 value: { type: "string" },
               },
               required: ["column"],
@@ -367,12 +358,57 @@ export const AI_QUERY_TOOL_DEFINITIONS: OpenAI.Chat.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "run_visual_sql",
+      description:
+        "Jalankan query SQL-like dan kembalikan agregasi/grafik. Contoh: SELECT metric, AVG(avg_value) FROM * GROUP BY metric",
+      parameters: {
+        type: "object",
+        properties: {
+          sql: {
+            type: "string",
+            description: "Query SQL-like (SELECT ... FROM * [WHERE ...] GROUP BY ...)",
+          },
+        },
+        required: ["sql"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_derived_field",
+      description:
+        "Validasi & preview kolom dihitung baru (rumus + − × ÷). Setelah ok, WAJIB sertakan action add_derived_field di respons FINAL agar kolom disimpan ke project.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: "Nama tampilan kolom, mis. Total IPA",
+          },
+          formula: {
+            type: "string",
+            description: "Rumus, mis. tugas + fisika + biologi (pakai key kolom numerik)",
+          },
+          key: {
+            type: "string",
+            description: "Key kolom opsional (snake_case). Kosongkan untuk auto dari nama.",
+          },
+        },
+        required: ["name", "formula"],
+      },
+    },
+  },
 ];
 
 export function executeAiQueryTool(
   dataset: AiQueryDataset,
   name: string,
-  argsJson: string
+  argsJson: string,
+  allowSensitive = false
 ): { result: unknown; fact: AiQueryFact } {
   let args: Record<string, unknown> = {};
   try {
@@ -391,15 +427,19 @@ export function executeAiQueryTool(
       case "aggregate_column":
         return execAggregateColumn(dataset, args);
       case "group_by":
-        return execGroupBy(dataset, args);
+        return execGroupBy(dataset, args, allowSensitive);
       case "top_rows":
-        return execTopRows(dataset, args);
+        return execTopRows(dataset, args, allowSensitive);
       case "distinct_values":
-        return execDistinctValues(dataset, args);
+        return execDistinctValues(dataset, args, allowSensitive);
       case "compare_groups":
         return execCompareGroups(dataset, args);
       case "column_stats":
-        return execColumnStats(dataset, args);
+        return execColumnStats(dataset, args, allowSensitive);
+      case "run_visual_sql":
+        return execVisualSql(dataset, args);
+      case "create_derived_field":
+        return execCreateDerivedField(dataset, args);
       default:
         return {
           result: { error: `Tool tidak dikenal: ${name}` },
@@ -471,13 +511,24 @@ function execAggregateColumn(dataset: AiQueryDataset, args: Record<string, unkno
   };
 }
 
-function execGroupBy(dataset: AiQueryDataset, args: Record<string, unknown>) {
+function execGroupBy(
+  dataset: AiQueryDataset,
+  args: Record<string, unknown>,
+  allowSensitive: boolean
+) {
   const groupRef = args.group_by_column as string;
   const groupKey = resolveColumn(dataset, groupRef);
   if (!groupKey) {
     return {
       result: { error: `Kolom grup tidak ditemukan: ${groupRef}` },
       fact: { tool: "group_by", summary: `Grup tidak ditemukan: ${groupRef}` },
+    };
+  }
+
+  if (!allowSensitive && isSensitive(dataset, groupKey)) {
+    return {
+      result: { error: `Kolom "${columnLabel(dataset, groupKey)}" berisi data sensitif (PII) — tidak boleh dipakai sebagai dimensi pengelompokan.` },
+      fact: { tool: "group_by", summary: `Grup PII ${columnLabel(dataset, groupKey)} ditolak` },
     };
   }
 
@@ -517,7 +568,11 @@ function execGroupBy(dataset: AiQueryDataset, args: Record<string, unknown>) {
   };
 }
 
-function execTopRows(dataset: AiQueryDataset, args: Record<string, unknown>) {
+function execTopRows(
+  dataset: AiQueryDataset,
+  args: Record<string, unknown>,
+  allowSensitive: boolean
+) {
   const sortRef = args.sort_column as string;
   const sortKey = resolveColumn(dataset, sortRef);
   if (!sortKey) {
@@ -539,14 +594,15 @@ function execTopRows(dataset: AiQueryDataset, args: Record<string, unknown>) {
   };
   const sorted = applyVisualQuery(dataset.rows, query, dataset.columns).slice(0, limit);
 
-  const displayKeys =
+  const displayKeys = (
     displayRefs
       ?.map((r) => resolveColumn(dataset, r))
       .filter((k): k is string => Boolean(k)) ??
     dataset.columns
       .filter((c) => c.key.trim() && !c.sensitive)
       .slice(0, 6)
-      .map((c) => c.key);
+      .map((c) => c.key)
+  ).filter((key) => allowSensitive || !isSensitive(dataset, key));
 
   const rows = sorted.map((row) => {
     const out: Record<string, string> = {};
@@ -571,13 +627,24 @@ function execTopRows(dataset: AiQueryDataset, args: Record<string, unknown>) {
   };
 }
 
-function execDistinctValues(dataset: AiQueryDataset, args: Record<string, unknown>) {
+function execDistinctValues(
+  dataset: AiQueryDataset,
+  args: Record<string, unknown>,
+  allowSensitive: boolean
+) {
   const colRef = args.column as string;
   const colKey = resolveColumn(dataset, colRef);
   if (!colKey) {
     return {
       result: { error: `Kolom tidak ditemukan: ${colRef}` },
       fact: { tool: "distinct_values", summary: `Kolom tidak ditemukan` },
+    };
+  }
+
+  if (!allowSensitive && isSensitive(dataset, colKey)) {
+    return {
+      result: { error: `Kolom "${columnLabel(dataset, colKey)}" berisi data sensitif (PII) — nilainya tidak boleh ditampilkan.` },
+      fact: { tool: "distinct_values", summary: `Kolom PII ${columnLabel(dataset, colKey)} ditolak` },
     };
   }
 
@@ -652,13 +719,24 @@ function execCompareGroups(dataset: AiQueryDataset, args: Record<string, unknown
   };
 }
 
-function execColumnStats(dataset: AiQueryDataset, args: Record<string, unknown>) {
+function execColumnStats(
+  dataset: AiQueryDataset,
+  args: Record<string, unknown>,
+  allowSensitive: boolean
+) {
   const colRef = args.column as string;
   const colKey = resolveColumn(dataset, colRef);
   if (!colKey) {
     return {
       result: { error: `Kolom tidak ditemukan: ${colRef}` },
       fact: { tool: "column_stats", summary: `Kolom tidak ditemukan` },
+    };
+  }
+
+  if (!allowSensitive && isSensitive(dataset, colKey)) {
+    return {
+      result: { error: `Kolom "${columnLabel(dataset, colKey)}" berisi data sensitif (PII) — statistik nilainya tidak boleh ditampilkan.` },
+      fact: { tool: "column_stats", summary: `Kolom PII ${columnLabel(dataset, colKey)} ditolak` },
     };
   }
 
@@ -670,6 +748,8 @@ function execColumnStats(dataset: AiQueryDataset, args: Record<string, unknown>)
   if (col.type === "number") {
     const nums = rows.map((r) => parseNumber(r[colKey])).filter((n): n is number => n !== null);
     const sum = nums.reduce((a, b) => a + b, 0);
+    const money = inferColumnIsCurrency(col);
+    const fmt = (n: number) => (money ? formatCurrency(n) : formatDisplayValue(n));
     return {
       result: {
         column: colKey,
@@ -682,12 +762,12 @@ function execColumnStats(dataset: AiQueryDataset, args: Record<string, unknown>)
         avg: nums.length ? sum / nums.length : 0,
         min: nums.length ? Math.min(...nums) : null,
         max: nums.length ? Math.max(...nums) : null,
-        sum_formatted: formatCurrency(sum),
-        avg_formatted: nums.length ? formatNumber(sum / nums.length) : null,
+        sum_formatted: fmt(sum),
+        avg_formatted: nums.length ? fmt(sum / nums.length) : null,
       },
       fact: {
         tool: "column_stats",
-        summary: `${label}: sum=${formatCurrency(sum)}, n=${nums.length}`,
+        summary: `${label}: sum=${fmt(sum)}, n=${nums.length}`,
       },
     };
   }
@@ -709,6 +789,110 @@ function execColumnStats(dataset: AiQueryDataset, args: Record<string, unknown>)
     fact: {
       tool: "column_stats",
       summary: `${label}: ${dist.length} unik, top="${dist[0]?.name ?? "—"}" (${dist[0]?.value ?? 0})`,
+    },
+  };
+}
+
+function execVisualSql(dataset: AiQueryDataset, args: Record<string, unknown>) {
+  const sql = typeof args.sql === "string" ? args.sql.trim() : "";
+  if (!sql) {
+    return {
+      result: { error: "sql wajib diisi" },
+      fact: { tool: "run_visual_sql", summary: "Query kosong" },
+    };
+  }
+
+  const sheetData: SheetData = {
+    rows: dataset.rows,
+    columns: dataset.columns,
+    charts: [],
+    kpis: [],
+    insights: [],
+    distributions: [],
+    topRecords: [],
+    sourceUrl: "",
+    fetchedAt: new Date().toISOString(),
+  };
+
+  const executed = executeVisualSql(sheetData, sql);
+  if (executed.error) {
+    return {
+      result: { error: executed.error },
+      fact: { tool: "run_visual_sql", summary: executed.error },
+    };
+  }
+
+  const chartPreview = executed.chart?.data.slice(0, 8).map((p) => ({
+    category: p.name,
+    value: p.value,
+  }));
+
+  return {
+    result: {
+      summary: executed.summary,
+      row_count: executed.rows.length,
+      rows: executed.rows.slice(0, 15),
+      chart: chartPreview,
+      suggested_widget: executed.chart
+        ? {
+            visualShape: "bar",
+            groupByKey: executed.chart.categoryKey,
+            measureKey: executed.chart.measureKey,
+            aggregation: executed.chart.aggregation,
+            title: executed.summary,
+          }
+        : undefined,
+    },
+    fact: {
+      tool: "run_visual_sql",
+      summary: executed.summary,
+    },
+  };
+}
+
+function execCreateDerivedField(dataset: AiQueryDataset, args: Record<string, unknown>) {
+  const name = typeof args.name === "string" ? args.name : "";
+  const formula = typeof args.formula === "string" ? args.formula : "";
+  const key = typeof args.key === "string" ? args.key : undefined;
+  const existing = dataset.derivedFields ?? [];
+
+  const validation = validateNewDerivedField(
+    name,
+    formula,
+    { columns: dataset.columns, rows: dataset.rows },
+    existing.map((f) => ({
+      id: f.key,
+      name: f.name,
+      key: f.key,
+      formula: f.formula,
+    })),
+    key
+  );
+
+  if (!validation.ok) {
+    return {
+      result: { ok: false, error: validation.error },
+      fact: { tool: "create_derived_field", summary: validation.error },
+    };
+  }
+
+  const { field, preview } = validation;
+  return {
+    result: {
+      ok: true,
+      field: { name: field.name, key: field.key, formula: field.formula },
+      preview,
+      persist_action: {
+        type: "add_derived_field",
+        name: field.name,
+        formula: field.formula,
+        key: field.key,
+      },
+      note: "WAJIB sertakan persist_action di array actions pada respons FINAL agar kolom disimpan ke project user.",
+    },
+    fact: {
+      tool: "create_derived_field",
+      summary: `Kolom "${field.name}" (${field.key}) siap dibuat — ${field.formula}`,
     },
   };
 }

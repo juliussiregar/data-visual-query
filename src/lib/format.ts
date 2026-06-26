@@ -29,6 +29,61 @@ export function parseNumber(value: string | undefined | null): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
+/** Bulatkan nilai metrik untuk tampilan (hindari 68.97999999999999). */
+export function roundMetricValue(value: number, decimals = 2): number {
+  if (!Number.isFinite(value)) return value;
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+const CURRENCY_COLUMN_HINTS =
+  /plafond|plafon|jumlah|amount|revenue|sales|pendapatan|harga|price|biaya|cost|payment|outstanding|saldo|budget|order_total|unit_price|subtotal|nilai_kredit|gross|net_sales|total_amount/i;
+
+const NON_CURRENCY_COLUMN_HINTS =
+  /tugas|ulangan|ujian|fisika|biologi|matematika|ipa_|skor|score|percent|persen|suhu|temp|humidity|co2|vibration|baseline|steady|peak_load|thermal|air_score|beban|kesehatan|avg_value|min_value|max_value|reading|signal|kelembapan|grade|student_id|student_code|device_code|device_id|^id$|_code$/i;
+
+const IDENTIFIER_COLUMN_HINTS =
+  /^(id|uuid|.*_id|student_code|student_id|device_code|device_id|code|kelas|semester|recorded_at|summary_date|.*_date)$/i;
+
+/** Kolom kode/ID — bukan metrik yang boleh dijumlahkan atau diformat Rp. */
+export function isIdentifierColumn(
+  column: { key: string; semanticRole?: string } | string
+): boolean {
+  const key = typeof column === "string" ? column : column.key;
+  const role = typeof column === "string" ? undefined : column.semanticRole;
+  if (role === "identifier") return true;
+  return IDENTIFIER_COLUMN_HINTS.test(key);
+}
+
+/** Deteksi apakah kolom angka sebaiknya diformat sebagai Rupiah. */
+export function inferColumnIsCurrency(
+  column: { key: string; label?: string; businessLabel?: string; semanticRole?: string } | string
+): boolean {
+  const col = typeof column === "string" ? { key: column } : column;
+  if (isIdentifierColumn(col)) return false;
+  const text = [col.key, col.label, col.businessLabel].filter(Boolean).join(" ");
+  const lower = text.toLowerCase();
+  if (NON_CURRENCY_COLUMN_HINTS.test(lower)) return false;
+  if (CURRENCY_COLUMN_HINTS.test(lower)) return true;
+  return false;
+}
+
+/** Format nilai tabel/query — angka dibulatkan, teks dibiarkan. */
+export function formatDisplayValue(value: string | number): string {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return String(value);
+    const rounded = roundMetricValue(value);
+    if (Number.isInteger(rounded)) return String(rounded);
+    return rounded.toLocaleString("id-ID", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    });
+  }
+  const num = parseNumber(value);
+  if (num !== null) return formatDisplayValue(num);
+  return value;
+}
+
 export function formatNumber(value: number, compact = false): string {
   if (compact) {
     if (Math.abs(value) >= 1_000_000_000) {

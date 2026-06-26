@@ -8,7 +8,7 @@ import {
   Menu,
   X,
 } from "lucide-react";
-import type { SheetData, ViewId, DashboardLayout, DashboardAction, DataScope, WidgetProposal, WidgetProposalConfirmResult } from "@/lib/types";
+import type { SheetData, ViewId, DashboardLayout, DashboardAction, DataScope, WidgetProposal, WidgetProposalConfirmResult, WidgetProposalsConfirmResult } from "@/lib/types";
 import { applyWidgetProposal, cloneLayout } from "@/lib/widget-proposal";
 import { reanalyze, type Filters } from "@/lib/filters";
 import { computeDataAlerts } from "@/lib/alerts";
@@ -25,6 +25,7 @@ import { UserMenu } from "./UserMenu";
 import { LoginPage } from "./LoginPage";
 import { DataSourcePanel } from "./DataSourcePanel";
 import { VisualQueryPanel, VisualQueryEmptyState } from "./VisualQueryPanel";
+import { QueryEditorPanel } from "./QueryEditorPanel";
 import {
   EMPTY_VISUAL_QUERY,
   applyVisualQuery,
@@ -37,6 +38,9 @@ import { AutoRefreshBar } from "./AutoRefreshBar";
 import { MetricGlossaryPanel } from "./MetricGlossaryPanel";
 import { ScheduledReportBar } from "./ScheduledReportBar";
 import { truncateUrl } from "@/lib/sheet-storage";
+import { sheetDataWithDerivedFields, validateNewDerivedField, type DerivedField } from "@/lib/derived-fields";
+import { createQueryDashboardWidgets, type QueryDashboardAddMode } from "@/lib/query-widget";
+import type { VisualSqlResult } from "@/lib/visual-sql";
 import { OverviewDashboard } from "./OverviewDashboard";
 import { ChartsGallery } from "./ChartsGallery";
 import {
@@ -83,6 +87,7 @@ import { resolveProjectDbTables } from "@/lib/db-table-datasets";
 import type { Project } from "@/lib/project-types";
 import {
   fetchProjects,
+  fetchProject,
   getProjectFromUrl,
   syncProjectToUrl,
   updateProject,
@@ -488,9 +493,10 @@ export function DashboardApp() {
         primaryTable?: string;
       },
       projectLayout?: DashboardLayout | null,
-      options?: { refresh?: boolean }
+      options?: { refresh?: boolean; preferredTable?: string | null }
     ) => {
       const isRefresh = options?.refresh ?? false;
+      const preferredTable = options?.preferredTable?.trim() || null;
       setLoading(true);
       setError(null);
       const tableList =
@@ -505,10 +511,15 @@ export function DashboardApp() {
       setDbDatasets(datasets);
       setActiveDbTables(tableList);
       const keepTable = selectedDataTableRef.current;
+      const defaultTable =
+        (preferredTable && tableList.includes(preferredTable) ? preferredTable : null) ??
+        (data.primaryTable && tableList.includes(data.primaryTable) ? data.primaryTable : null) ??
+        tableList[0] ??
+        "";
       if (isRefresh && keepTable && tableList.includes(keepTable)) {
         setSelectedDataTable(keepTable);
       } else {
-        setSelectedDataTable(tableList[0] ?? "");
+        setSelectedDataTable(defaultTable);
       }
       if (!isRefresh) {
         setFilters({});
@@ -556,7 +567,9 @@ export function DashboardApp() {
         setError(null);
         try {
           const loaded = await fetchDatabaseProjectData(project);
-          await loadFromDatabase(loaded, resolveLayoutForReload(project));
+          await loadFromDatabase(loaded, resolveLayoutForReload(project), {
+            preferredTable: project.activeDbTable,
+          });
         } catch (err) {
           setError(err instanceof Error ? err.message : "Gagal memuat database");
           setActiveView("overview");
@@ -675,7 +688,9 @@ export function DashboardApp() {
           resolveProjectDbTables(project).length > 0
         ) {
           const loaded = await fetchDatabaseProjectData(project);
-          await loadFromDatabase(loaded, resolveLayoutForReload(project));
+          await loadFromDatabase(loaded, resolveLayoutForReload(project), {
+            preferredTable: project.activeDbTable,
+          });
         }
         if (successMessage) toast(successMessage);
       } catch (err) {
@@ -738,6 +753,20 @@ export function DashboardApp() {
     setActiveProject((prev) => (prev ? { ...prev, layout: next } : prev));
   }, []);
 
+  const handleDerivedFieldsChange = useCallback(
+    async (fields: DerivedField[]) => {
+      const project = activeProjectRef.current;
+      if (!project) return;
+      setActiveProject({ ...project, derivedFields: fields });
+      setProjects((prev) =>
+        prev.map((p) => (p.id === project.id ? { ...p, derivedFields: fields } : p))
+      );
+      await updateProject(project.id, { derivedFields: fields });
+      toast("Kolom custom disimpan ke project", "info");
+    },
+    [toast]
+  );
+
   const handleRefreshData = useCallback(async () => {
     const project = activeProjectRef.current;
     await flushSave();
@@ -747,7 +776,10 @@ export function DashboardApp() {
       setError(null);
       try {
         const loaded = await fetchDatabaseProjectData(project);
-        await loadFromDatabase(loaded, resolveLayoutForReload(project), { refresh: true });
+        await loadFromDatabase(loaded, resolveLayoutForReload(project), {
+          refresh: true,
+          preferredTable: project.activeDbTable,
+        });
         const datasets = loaded.datasets ?? {};
         const parts = Object.entries(datasets).map(
           ([table, ds]) => `${table}: ${(ds.rows?.length ?? 0).toLocaleString("id-ID")}`
@@ -820,7 +852,8 @@ export function DashboardApp() {
 
       const projectId = searchParams.get("project") || getProjectFromUrl();
       if (projectId) {
-        const project = list.find((p) => p.id === projectId);
+        const fromList = list.find((p) => p.id === projectId);
+        const project = (await fetchProject(projectId)) ?? fromList;
         if (project) {
           openProject(project);
           setActiveView("overview");
@@ -839,7 +872,7 @@ export function DashboardApp() {
       if (list.length === 0) {
         setShowCreateDialog(true);
       } else {
-        const first = list[0];
+        const first = (await fetchProject(list[0].id)) ?? list[0];
         openProject(first);
         if (projectHasSource(first)) {
           setLoadingMessage("Memuat data…");
@@ -869,8 +902,13 @@ export function DashboardApp() {
 
   const displayData = useMemo(() => {
     if (!queryFilteredBase) return null;
-    return reanalyze(queryFilteredBase, filters);
-  }, [queryFilteredBase, filters]);
+    let data = reanalyze(queryFilteredBase, filters);
+    const fields = activeProject?.derivedFields ?? [];
+    if (fields.length > 0) {
+      data = sheetDataWithDerivedFields(data, fields);
+    }
+    return data;
+  }, [queryFilteredBase, filters, activeProject?.derivedFields]);
 
   const enrichedDisplayData = useMemo(() => {
     if (!displayData) return null;
@@ -1016,25 +1054,57 @@ export function DashboardApp() {
             needsReload = nextUrls.length > 1;
             break;
           case "reset_layout":
-            if (sheetData) {
-              setLayout(createDefaultLayout(sheetUrls));
-            }
+            // Penanganan sebenarnya dilakukan di bawah (base layout) agar tidak
+            // tertimpa oleh applyLayoutActions.
             break;
+          case "add_derived_field": {
+            const project = activeProjectRef.current;
+            if (!project) break;
+            const existing = project.derivedFields ?? [];
+            const base = scopedBase ?? sheetData;
+            const columnsData = existing.length
+              ? sheetDataWithDerivedFields(base, existing)
+              : base;
+            const validation = validateNewDerivedField(
+              action.name,
+              action.formula,
+              { columns: columnsData.columns, rows: columnsData.rows },
+              existing,
+              action.key
+            );
+            if (!validation.ok) {
+              toast(validation.error, "error");
+              break;
+            }
+            void handleDerivedFieldsChange([...existing, validation.field]);
+            logAuditClient(
+              "layout_change",
+              `AI kolom custom: ${validation.field.name}`,
+              { key: validation.field.key, formula: validation.field.formula },
+              userRole
+            );
+            break;
+          }
           default:
             break;
         }
       }
 
       if (layout) {
-        const nextLayout = applyLayoutActions(layout, actions, columns);
+        const hasReset = actions.some((a) => a.type === "reset_layout");
+        const baseLayout = hasReset ? createDefaultLayout(sheetUrls) : layout;
+        const nextLayout = applyLayoutActions(baseLayout, actions, columns);
         setLayout(nextLayout);
+        if (perms.canEditLayout && nextLayout !== layout) {
+          void flushSave(nextLayout);
+        }
       }
 
       if (needsReload && nextUrls.length > 0) {
         loadSheets(nextUrls, nextMerge);
       }
     },
-    [sheetData, sheetUrls, layout, loadSheets]
+    [sheetData, scopedBase, sheetUrls, layout, loadSheets, perms.canEditLayout, flushSave, handleDerivedFieldsChange, userRole, toast]
   );
 
   const handleWidgetProposalReceived = useCallback(() => {
@@ -1053,7 +1123,7 @@ export function DashboardApp() {
       if (!dataForWidget) return { ok: false };
 
       const snapshot = cloneLayout(layout);
-      const { layout: next, error } = applyWidgetProposal(layout, dataForWidget, proposal);
+      const { layout: next, error } = applyWidgetProposal(layout, dataForWidget, proposal, dbDatasets);
       if (error) {
         toast(error);
         return { ok: false };
@@ -1078,7 +1148,86 @@ export function DashboardApp() {
       );
       return { ok: true, layoutSnapshot: snapshot };
     },
-    [layout, perms.canEditLayout, viewData, sheetData, flushSave, userRole, toast]
+    [layout, perms.canEditLayout, viewData, sheetData, dbDatasets, flushSave, userRole, toast]
+  );
+
+  const handleConfirmWidgetProposals = useCallback(
+    (proposals: WidgetProposal[]): WidgetProposalsConfirmResult => {
+      if (!layout || !perms.canEditLayout) {
+        return { ok: false, appliedCount: 0, errors: ["Tidak diizinkan mengubah layout"] };
+      }
+      const dataForWidget = viewData ?? sheetData;
+      if (!dataForWidget) return { ok: false, appliedCount: 0, errors: ["Data belum siap"] };
+
+      const snapshot = cloneLayout(layout);
+      let working = layout;
+      const errors: string[] = [];
+      let applied = 0;
+      for (const proposal of proposals) {
+        const { layout: next, error } = applyWidgetProposal(working, dataForWidget, proposal, dbDatasets);
+        if (error) {
+          errors.push(error);
+          continue;
+        }
+        working = next;
+        applied += 1;
+      }
+
+      if (applied === 0) {
+        if (errors.length) toast(errors[0]);
+        return { ok: false, appliedCount: 0, errors };
+      }
+
+      setLayout(working);
+      void flushSave(working);
+      setActiveView("overview");
+      setMobileNav(false);
+      logAuditClient("layout_change", `AI widget batch: ${applied} widget`, { count: applied }, userRole);
+      toast(
+        `${applied} widget ditambahkan ke Overview${errors.length ? ` · ${errors.length} gagal` : ""}`
+      );
+      return { ok: true, appliedCount: applied, errors, layoutSnapshot: snapshot };
+    },
+    [layout, perms.canEditLayout, viewData, sheetData, dbDatasets, flushSave, userRole, toast]
+  );
+
+  const handleQueryDashboardWidget = useCallback(
+    (
+      result: VisualSqlResult,
+      mode: QueryDashboardAddMode,
+      chartType: import("@/lib/types").ChartType = "bar",
+      sql = ""
+    ) => {
+      if (!layout || !perms.canEditLayout) return;
+      const dataForWidget = scopedBase ?? viewData ?? sheetData;
+      if (!dataForWidget) return;
+
+      const maxOrder = layout.widgets.reduce((m, w) => Math.max(m, w.order), 0);
+      const newWidgets = createQueryDashboardWidgets(
+        result,
+        mode,
+        chartType,
+        sql,
+        dataForWidget,
+        maxOrder,
+        selectedDataTable || undefined
+      );
+      if (!newWidgets.length) return;
+
+      const next = { ...layout, widgets: [...layout.widgets, ...newWidgets] };
+      setLayout(next);
+      void flushSave(next);
+      setActiveView("overview");
+
+      const label =
+        mode === "both"
+          ? "Grafik & tabel dari query ditambahkan ke Overview"
+          : mode === "table"
+            ? "Tabel dari query ditambahkan ke Overview"
+            : "Grafik dari query ditambahkan ke Overview";
+      toast(label);
+    },
+    [layout, perms.canEditLayout, scopedBase, viewData, sheetData, selectedDataTable, flushSave, toast]
   );
 
   const handleUndoWidgetLayout = useCallback(
@@ -1130,6 +1279,7 @@ export function DashboardApp() {
         return (
           <OverviewDashboard
             data={sheetData}
+            derivedFields={activeProject?.derivedFields ?? []}
             dbDatasets={dbDatasets}
             activeDbTables={activeDbTables}
             tableRelations={activeProject?.tableRelations}
@@ -1155,6 +1305,7 @@ export function DashboardApp() {
             onRemoveSheet={handleRemoveSheetFromMerge}
             onToggleMerge={handleToggleMergeMode}
             onReloadMerged={handleReloadMerged}
+            onDerivedFieldsChange={handleDerivedFieldsChange}
           />
         );
 
@@ -1202,17 +1353,31 @@ export function DashboardApp() {
         return (
           <ViewPageShell
             title="Cari Data"
-            description="Susun filter visual tanpa menulis kode"
+            description="Filter visual atau query SQL-like — hasil langsung ke grafik"
           >
-            <VisualQueryPanel
-              data={scopedBase}
-              query={visualQuery}
-              onChange={setVisualQuery}
-              onApplyToDashboard={() => setActiveView("overview")}
-              onClear={() => setVisualQuery(EMPTY_VISUAL_QUERY)}
-              maskPII={perms.maskPII}
-              canExport={perms.canExport}
-            />
+            <div className="space-y-6">
+              <QueryEditorPanel
+                data={scopedBase}
+                derivedFields={activeProject?.derivedFields ?? []}
+                activeTable={selectedDataTable}
+                dbDatasets={dbDatasets}
+                availableTables={activeDbTables}
+                tableRelations={activeProject?.tableRelations}
+                onSelectTable={setSelectedDataTable}
+                onAddToDashboard={(result, mode, chartType, sql) =>
+                  handleQueryDashboardWidget(result, mode, chartType, sql)
+                }
+              />
+              <VisualQueryPanel
+                data={scopedBase}
+                query={visualQuery}
+                onChange={setVisualQuery}
+                onApplyToDashboard={() => setActiveView("overview")}
+                onClear={() => setVisualQuery(EMPTY_VISUAL_QUERY)}
+                maskPII={perms.maskPII}
+                canExport={perms.canExport}
+              />
+            </div>
           </ViewPageShell>
         );
 
@@ -1525,8 +1690,13 @@ export function DashboardApp() {
               userRole={userRole}
               layout={layout}
               sheetUrls={sheetUrls}
+              dbDatasets={dbDatasets}
+              activeDbTables={activeDbTables}
+              tableRelations={activeProject?.tableRelations}
+              derivedFields={activeProject?.derivedFields ?? []}
               onApplyActions={applyChatActions}
               onConfirmWidgetProposal={handleConfirmWidgetProposal}
+              onConfirmWidgetProposals={handleConfirmWidgetProposals}
               onUndoWidgetLayout={handleUndoWidgetLayout}
               onWidgetProposalReceived={handleWidgetProposalReceived}
             />
@@ -1558,6 +1728,7 @@ export function DashboardApp() {
         >
           <ProjectSettingsDialogContent
             project={activeProject}
+            sheetColumns={viewData?.columns ?? sheetData?.columns}
             onUpdated={(p) => void handleProjectSettingsSaved(p)}
             onDeleted={handleProjectDeleted}
             onLoad={() => {

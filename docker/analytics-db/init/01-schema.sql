@@ -46,3 +46,22 @@ CREATE INDEX IF NOT EXISTS idx_sensor_readings_recorded_at ON sensor_readings (r
 CREATE INDEX IF NOT EXISTS idx_sensor_readings_device_metric ON sensor_readings (device_id, metric, recorded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_device_alerts_triggered_at ON device_alerts (triggered_at DESC);
 CREATE INDEX IF NOT EXISTS idx_device_daily_summary_date ON device_daily_summary (summary_date DESC);
+
+-- Skor kesehatan perangkat per hari (kolom komponen untuk latihan formula BI)
+-- Analogi: baseline/peak/steady ≈ Tugas/Ulangan/Ujian; thermal/air ≈ Fisika/Biologi
+CREATE TABLE IF NOT EXISTS device_health_scores (
+    id              BIGSERIAL PRIMARY KEY,
+    device_id       INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    device_code     VARCHAR(50) NOT NULL,
+    zone            VARCHAR(80) NOT NULL,
+    summary_date    DATE NOT NULL,
+    baseline_load   NUMERIC(8, 2) NOT NULL,
+    peak_load       NUMERIC(8, 2) NOT NULL,
+    steady_load     NUMERIC(8, 2) NOT NULL,
+    thermal_score   NUMERIC(8, 2) NOT NULL,
+    air_score       NUMERIC(8, 2) NOT NULL,
+    UNIQUE (device_id, summary_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_health_scores_date ON device_health_scores (summary_date DESC);
+CREATE INDEX IF NOT EXISTS idx_device_health_scores_zone ON device_health_scores (zone);

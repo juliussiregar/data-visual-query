@@ -110,6 +110,7 @@ model Project {
   activeDbTable        String?  @map("active_db_table")
   activeDbTables       Json     @default("[]") @map("active_db_tables")
   tableRelations       Json     @default("[]") @map("table_relations")
+  derivedFields        Json     @default("[]") @map("derived_fields")
   layoutJson           Json?    @map("layout_json")
   lastOpenedAt         DateTime @default(now()) @map("last_opened_at")
   createdAt            DateTime @default(now()) @map("created_at")

@@ -23,12 +23,14 @@
     "db:reset": "node scripts/with-db-url.mjs migrate reset",
     "db:reset-workspace": "node scripts/reset-workspace.mjs",
     "analytics:seed": "node scripts/seed-analytics-iot.mjs",
+    "education:seed": "node scripts/seed-education-analytics.mjs",
     "analytics:reader-role": "node scripts/setup-analytics-reader.mjs",
-    "analytics:setup": "docker compose up -d analytics-db && node scripts/seed-analytics-iot.mjs && node scripts/setup-analytics-reader.mjs",
+    "analytics:setup": "docker compose up -d analytics-db && node scripts/seed-analytics-iot.mjs && node scripts/seed-education-analytics.mjs && node scripts/setup-analytics-reader.mjs",
     "mysql:seed": "node scripts/seed-mysql-analytics.mjs",
     "mysql:reader-role": "node scripts/setup-mysql-analytics-reader.mjs",
     "mysql:setup": "docker compose up -d mysql-analytics-db && node scripts/seed-mysql-analytics.mjs && node scripts/setup-mysql-analytics-reader.mjs",
-    "verify:join": "tsx scripts/verify-join-app.ts"
+    "verify:join": "tsx scripts/verify-join-app.ts",
+    "verify:features": "tsx scripts/verify-new-features.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

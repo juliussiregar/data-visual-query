@@ -11,7 +11,11 @@ import { findColumnKey } from "./chat-actions";
 import { createWidgetFromShape, getShapeDef, WIDGET_SHAPES } from "./widget-catalog";
 import { validateWidgetConfig } from "./widget-data";
 import { widgetLabel } from "./layout";
-import type { QueryCondition, QueryOperator } from "./visual-query";
+import { resolveWidgetSheetData } from "./db-table-datasets";
+import { QUERY_OPERATORS, type QueryCondition, type QueryOperator } from "./visual-query";
+
+/** Datasets per tabel (project multi-tabel). Key = nama tabel/alias. */
+export type WidgetTableDatasets = Record<string, SheetData> | null | undefined;
 
 const SHAPES: WidgetVisualShape[] = [
   "stat",
@@ -24,21 +28,6 @@ const SHAPES: WidgetVisualShape[] = [
 ];
 
 const AGGREGATIONS: WidgetAggregation[] = ["count", "sum", "avg", "min", "max"];
-
-const OPERATORS: QueryOperator[] = [
-  "equals",
-  "not_equals",
-  "contains",
-  "not_contains",
-  "starts_with",
-  "gt",
-  "gte",
-  "lt",
-  "lte",
-  "between",
-  "is_empty",
-  "is_not_empty",
-];
 
 function resolveColumn(ref: string | undefined, columns: SheetData["columns"]): string | undefined {
   if (!ref?.trim()) return undefined;
@@ -61,7 +50,7 @@ function toQueryConditions(
     .map((c, i) => {
       const columnKey = resolveColumn(c.column, columns);
       if (!columnKey) return null;
-      const operator = OPERATORS.includes(c.operator) ? c.operator : "equals";
+      const operator = QUERY_OPERATORS.includes(c.operator) ? c.operator : "equals";
       return {
         id: `ai-cond-${i}`,
         columnKey,
@@ -74,6 +63,46 @@ function toQueryConditions(
 
 export function cloneLayout(layout: DashboardLayout): DashboardLayout {
   return structuredClone(layout);
+}
+
+/**
+ * Tabel sumber efektif untuk sebuah proposal:
+ * - create/update yang menyebut sourceTable → pakai itu
+ * - update tanpa sourceTable → warisi dari widget yang ada
+ */
+function resolveProposalSourceTable(
+  proposal: WidgetProposal,
+  layout: DashboardLayout
+): string | undefined {
+  const explicit = proposal.sourceTable?.trim();
+  if (explicit) return explicit;
+  if (proposal.operation === "update" && proposal.widgetId) {
+    return layout.widgets.find((w) => w.id === proposal.widgetId)?.sourceTable;
+  }
+  return undefined;
+}
+
+/** Pilih dataset (kolom + baris) yang benar untuk proposal sesuai sourceTable-nya. */
+function resolveProposalData(
+  proposal: WidgetProposal,
+  primary: SheetData,
+  layout: DashboardLayout,
+  datasets: WidgetTableDatasets
+): { sourceTable: string | undefined; data: SheetData } {
+  const requested = resolveProposalSourceTable(proposal, layout);
+  // Hanya anggap valid bila datasets memuat tabel tsb. (project multi-tabel).
+  const sourceTable = requested && datasets?.[requested] ? requested : undefined;
+  return { sourceTable, data: resolveWidgetSheetData(primary, datasets, { sourceTable }) };
+}
+
+/** Dataset (kolom + baris) tabel sumber proposal — untuk preview/validasi di luar modul ini. */
+export function proposalSheetData(
+  proposal: WidgetProposal,
+  primary: SheetData,
+  layout: DashboardLayout,
+  datasets: WidgetTableDatasets
+): SheetData {
+  return resolveProposalData(proposal, primary, layout, datasets).data;
 }
 
 /** Cari widget dari judul, id, bentuk visual, atau referensi natural. */
@@ -126,8 +155,12 @@ export function normalizeWidgetProposal(
   data: SheetData
 ): WidgetProposal {
   if (proposal.widgetId) return proposal;
-  if (!proposal.widgetRef?.trim()) return proposal;
-  const found = findWidgetByRef(proposal.widgetRef, layout, data);
+  // update/delete: jika widgetRef kosong, pakai title sebagai referensi natural ke widget yang ada.
+  const ref =
+    proposal.widgetRef?.trim() ||
+    (proposal.operation !== "create" ? proposal.title?.trim() : undefined);
+  if (!ref) return proposal;
+  const found = findWidgetByRef(ref, layout, data);
   if (!found) return proposal;
   return { ...proposal, widgetId: found.id };
 }
@@ -143,6 +176,14 @@ function applyShapeChange(base: WidgetConfig, newShape: WidgetVisualShape): Widg
   };
 }
 
+/** Parse satu ATAU banyak proposal. Terima array, objek tunggal, atau null. */
+export function parseWidgetProposals(raw: unknown): WidgetProposal[] {
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list
+    .map((item) => parseWidgetProposal(item))
+    .filter((p): p is WidgetProposal => p !== null);
+}
+
 export function parseWidgetProposal(raw: unknown): WidgetProposal | null {
   if (!raw || typeof raw !== "object") return null;
   const p = raw as Record<string, unknown>;
@@ -154,10 +195,18 @@ export function parseWidgetProposal(raw: unknown): WidgetProposal | null {
   const summary = typeof p.summary === "string" ? p.summary.trim() : "";
   if (!validationQuestion || !summary) return null;
 
-  const visualShape =
+  let visualShape =
     typeof p.visualShape === "string" && SHAPES.includes(p.visualShape as WidgetVisualShape)
       ? (p.visualShape as WidgetVisualShape)
       : undefined;
+
+  // Fallback: create tanpa visualShape → infer dari field (ada dimensi → bar, hanya measure → stat).
+  if (!visualShape && operation === "create") {
+    const hasGroup = typeof p.groupByKey === "string" && p.groupByKey.trim().length > 0;
+    const hasMeasure = typeof p.measureKey === "string" && p.measureKey.trim().length > 0;
+    if (hasGroup) visualShape = "bar";
+    else if (hasMeasure) visualShape = "stat";
+  }
 
   const aggregation =
     typeof p.aggregation === "string" && AGGREGATIONS.includes(p.aggregation as WidgetAggregation)
@@ -170,7 +219,7 @@ export function parseWidgetProposal(raw: unknown): WidgetProposal | null {
       .filter((c): c is Record<string, unknown> => !!c && typeof c === "object")
       .map((c) => ({
         column: String(c.column ?? ""),
-        operator: (OPERATORS.includes(c.operator as QueryOperator)
+        operator: (QUERY_OPERATORS.includes(c.operator as QueryOperator)
           ? c.operator
           : "equals") as QueryOperator,
         value: String(c.value ?? ""),
@@ -182,6 +231,10 @@ export function parseWidgetProposal(raw: unknown): WidgetProposal | null {
     operation,
     widgetId: typeof p.widgetId === "string" ? p.widgetId.trim() : undefined,
     widgetRef: typeof p.widgetRef === "string" ? p.widgetRef.trim() : undefined,
+    sourceTable:
+      typeof p.sourceTable === "string" && p.sourceTable.trim()
+        ? p.sourceTable.trim()
+        : undefined,
     visualShape,
     title: typeof p.title === "string" ? p.title.trim() : undefined,
     layoutWidth: p.layoutWidth === "full" || p.layoutWidth === "half" ? p.layoutWidth : undefined,
@@ -204,7 +257,8 @@ export function parseWidgetProposal(raw: unknown): WidgetProposal | null {
 export function validateWidgetProposal(
   proposal: WidgetProposal,
   data: SheetData,
-  layout: DashboardLayout
+  layout: DashboardLayout,
+  datasets?: WidgetTableDatasets
 ): string | null {
   const resolved = normalizeWidgetProposal(proposal, layout, data);
 
@@ -219,15 +273,23 @@ export function validateWidgetProposal(
     if (!exists) return `Widget "${resolved.widgetId}" tidak ditemukan.`;
   }
 
+  // sourceTable yang diminta tapi tak dikenal (project multi-tabel) → tolak, jangan diam-diam fallback.
+  const requestedTable = proposal.sourceTable?.trim();
+  if (requestedTable && datasets && !datasets[requestedTable]) {
+    const known = Object.keys(datasets).join(", ") || "tidak ada";
+    return `Tabel "${requestedTable}" tidak ditemukan. Tabel tersedia: ${known}.`;
+  }
+
   if (proposal.operation === "create") {
     if (!proposal.visualShape) return "visualShape wajib untuk widget baru.";
     if (!getShapeDef(proposal.visualShape)) return "Bentuk widget tidak valid.";
   }
 
   if (proposal.operation !== "delete") {
-    const draft = buildWidgetConfigFromProposal(resolved, data, layout);
+    const { data: tableData } = resolveProposalData(resolved, data, layout, datasets);
+    const draft = buildWidgetConfigFromProposal(resolved, data, layout, datasets);
     if (!draft) return "Konfigurasi widget tidak bisa dibuat dari proposal.";
-    const err = validateWidgetConfig(draft, data);
+    const err = validateWidgetConfig(draft, tableData);
     if (err) return err;
   }
 
@@ -237,9 +299,11 @@ export function validateWidgetProposal(
 export function buildWidgetConfigFromProposal(
   proposal: WidgetProposal,
   data: SheetData,
-  layout: DashboardLayout
+  layout: DashboardLayout,
+  datasets?: WidgetTableDatasets
 ): WidgetConfig | null {
-  const columns = data.columns;
+  const { sourceTable, data: tableData } = resolveProposalData(proposal, data, layout, datasets);
+  const columns = tableData.columns;
   const maxOrder = layout.widgets.reduce((m, w) => Math.max(m, w.order), -1);
 
   let base: WidgetConfig;
@@ -250,7 +314,7 @@ export function buildWidgetConfigFromProposal(
       ? applyShapeChange({ ...existing }, proposal.visualShape)
       : { ...existing };
   } else if (proposal.operation === "create" && proposal.visualShape) {
-    base = createWidgetFromShape(proposal.visualShape, data, maxOrder);
+    base = createWidgetFromShape(proposal.visualShape, tableData, maxOrder, sourceTable);
   } else if (proposal.operation === "delete") {
     return null;
   } else {
@@ -287,6 +351,7 @@ export function buildWidgetConfigFromProposal(
     title: proposal.title ?? base.title,
     layoutWidth: proposal.layoutWidth ?? base.layoutWidth,
     visible: proposal.visible ?? base.visible,
+    sourceTable: sourceTable ?? base.sourceTable,
     visualShape: proposal.visualShape ?? base.visualShape,
     chartType:
       proposal.visualShape && getShapeDef(proposal.visualShape)?.chartType
@@ -302,10 +367,11 @@ export function buildWidgetConfigFromProposal(
 export function applyWidgetProposal(
   layout: DashboardLayout,
   data: SheetData,
-  proposal: WidgetProposal
+  proposal: WidgetProposal,
+  datasets?: WidgetTableDatasets
 ): { layout: DashboardLayout; error?: string } {
   const resolved = normalizeWidgetProposal(proposal, layout, data);
-  const validationError = validateWidgetProposal(resolved, data, layout);
+  const validationError = validateWidgetProposal(resolved, data, layout, datasets);
   if (validationError) return { layout, error: validationError };
 
   const now = new Date().toISOString();
@@ -320,7 +386,7 @@ export function applyWidgetProposal(
     };
   }
 
-  const widget = buildWidgetConfigFromProposal(resolved, data, layout);
+  const widget = buildWidgetConfigFromProposal(resolved, data, layout, datasets);
   if (!widget) return { layout, error: "Gagal membangun widget." };
 
   if (resolved.operation === "create") {

@@ -1,4 +1,4 @@
-import { parseNumber } from "./format";
+import { parseNumber, roundMetricValue } from "./format";
 import type { ChartDataPoint } from "./types";
 
 export const CHART_COLORS = [
@@ -66,10 +66,10 @@ export function aggregateData(
   let i = 0;
   for (const [name, { sum, count, min, max }] of map.entries()) {
     let value = count;
-    if (aggregation === "sum") value = sum;
-    if (aggregation === "avg") value = count > 0 ? sum / count : 0;
-    if (aggregation === "min") value = count > 0 ? min : 0;
-    if (aggregation === "max") value = count > 0 ? max : 0;
+    if (aggregation === "sum") value = roundMetricValue(sum);
+    if (aggregation === "avg") value = count > 0 ? roundMetricValue(sum / count) : 0;
+    if (aggregation === "min") value = count > 0 ? roundMetricValue(min) : 0;
+    if (aggregation === "max") value = count > 0 ? roundMetricValue(max) : 0;
     points.push({
       name,
       value,

@@ -109,6 +109,13 @@ export const ALL_CHART_TYPES: ChartType[] = [
   "composed",
 ];
 
+export interface ChartSeriesSpec {
+  key: string;
+  label: string;
+  aggregation: "count" | "sum" | "avg" | "min" | "max";
+  valueFormat?: "currency" | "number";
+}
+
 export interface ChartConfig {
   id: string;
   title: string;
@@ -117,8 +124,13 @@ export interface ChartConfig {
   valueKey?: string;
   aggregation: "count" | "sum" | "avg" | "min" | "max";
   data: ChartDataPoint[];
+  /** Beberapa metrik per kategori (untuk bar bertumpuk / grouped) */
+  series?: ChartSeriesSpec[];
+  multiSeriesData?: Array<Record<string, string | number> & { name: string }>;
   description?: string;
   featured?: boolean;
+  /** Format nilai sumbu/tooltip — default: deteksi dari valueKey */
+  valueFormat?: "currency" | "number";
 }
 
 export interface ChartDataPoint {
@@ -222,12 +234,21 @@ export type WidgetProposalConfirmResult = {
   layoutSnapshot?: DashboardLayout;
 };
 
+export type WidgetProposalsConfirmResult = {
+  ok: boolean;
+  appliedCount: number;
+  errors: string[];
+  layoutSnapshot?: DashboardLayout;
+};
+
 export interface WidgetProposal {
   operation: WidgetProposalOperation;
   /** Wajib untuk update/delete (atau pakai widgetRef) */
   widgetId?: string;
   /** Referensi natural: judul widget, bentuk, atau id parsial — alternatif widgetId */
   widgetRef?: string;
+  /** Tabel sumber untuk widget ini bila project punya >1 tabel (lihat availableTables di context) */
+  sourceTable?: string;
   visualShape?: WidgetVisualShape;
   title?: string;
   layoutWidth?: "full" | "half";
@@ -249,8 +270,12 @@ export interface WidgetProposal {
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  /** Teks yang ditampilkan di bubble (mis. label chip yang diklik); fallback ke content. */
+  displayContent?: string;
   actions?: DashboardAction[];
   widgetProposal?: WidgetProposal;
+  /** Beberapa proposal sekaligus (mis. user minta beberapa widget). Item pertama = widgetProposal (kompat). */
+  widgetProposals?: WidgetProposal[];
   /** Proposal sudah dikonfirmasi/ditolak user */
   proposalStatus?: "pending" | "confirmed" | "rejected";
   /** Snapshot layout sebelum diterapkan — untuk undo (tidak disimpan ke localStorage) */
@@ -276,6 +301,8 @@ export interface AiQueryDataset {
   insights?: InsightItem[];
   metrics?: MetricDefinition[];
   metricValues?: MetricValues;
+  /** Definisi kolom custom project (rumus tersimpan) */
+  derivedFields?: { name: string; key: string; formula: string }[];
 }
 
 export interface AiQueryFact {
@@ -356,6 +383,8 @@ export interface WidgetDataQuery {
   displayColumns?: string[];
   /** Table widget: optional summary row at the bottom */
   tableSummary?: TableSummaryConfig;
+  /** Query SQL-like dari editor Explore (multi-metrik & filter) */
+  visualSql?: string;
 }
 
 export type TableSummaryScope = "all_numeric" | "selected";
@@ -395,7 +424,8 @@ export type DashboardAction =
   | { type: "add_sheet"; url: string }
   | { type: "remove_sheet"; url: string }
   | { type: "set_merge_mode"; enabled: boolean }
-  | { type: "reset_layout" };
+  | { type: "reset_layout" }
+  | { type: "add_derived_field"; name: string; formula: string; key?: string };
 
 export type DataAlertSeverity = "info" | "warning" | "critical";
 
@@ -451,8 +481,18 @@ export interface DashboardContext {
     groupByKey?: string;
     measureKey?: string;
     aggregation?: string;
+    /** Tabel sumber widget bila project multi-tabel */
+    sourceTable?: string;
+  }[];
+  /** Tabel yang tersedia (project multi-tabel). Kosong/undefined = hanya satu tabel. */
+  availableTables?: {
+    name: string;
+    label: string;
+    columns: { key: string; label: string }[];
   }[];
   sheetUrls: string[];
   mergeMode: boolean;
   editMode: boolean;
+  /** Kolom dihitung yang sudah ada di project */
+  derivedFields?: { name: string; key: string; formula: string }[];
 }

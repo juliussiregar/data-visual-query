@@ -2,9 +2,10 @@
 
 import { useState, type CSSProperties } from "react";
 import { Bot, X, Sparkles } from "lucide-react";
-import type { SheetData, ViewId, DashboardLayout, DataScope } from "@/lib/types";
+import type { SheetData, ViewId, DashboardLayout, DataScope, DashboardAction, WidgetProposal, WidgetProposalConfirmResult, WidgetProposalsConfirmResult } from "@/lib/types";
+import type { TableRelation } from "@/lib/sql-query-types";
+import type { DerivedField } from "@/lib/derived-fields";
 import type { UserRole } from "@/lib/auth";
-import type { DashboardAction, WidgetProposal, WidgetProposalConfirmResult } from "@/lib/types";
 import { ChatPanel } from "./ChatPanel";
 import { cn } from "@/lib/utils";
 import {
@@ -24,8 +25,13 @@ interface FloatingChatWidgetProps {
   userRole: UserRole;
   layout: DashboardLayout;
   sheetUrls: string[];
+  dbDatasets: Record<string, SheetData> | null;
+  activeDbTables: string[];
+  tableRelations?: TableRelation[];
+  derivedFields?: DerivedField[];
   onApplyActions: (actions: DashboardAction[]) => void;
   onConfirmWidgetProposal: (proposal: WidgetProposal) => WidgetProposalConfirmResult;
+  onConfirmWidgetProposals: (proposals: WidgetProposal[]) => WidgetProposalsConfirmResult;
   onUndoWidgetLayout: (snapshot: DashboardLayout) => void;
   onWidgetProposalReceived?: () => void;
 }
@@ -78,8 +84,13 @@ export function FloatingChatWidget({
   userRole,
   layout,
   sheetUrls,
+  dbDatasets,
+  activeDbTables,
+  tableRelations,
+  derivedFields,
   onApplyActions,
   onConfirmWidgetProposal,
+  onConfirmWidgetProposals,
   onUndoWidgetLayout,
   onWidgetProposalReceived,
 }: FloatingChatWidgetProps) {
@@ -125,8 +136,13 @@ export function FloatingChatWidget({
             userRole={userRole}
             layout={layout}
             sheetUrls={sheetUrls}
+            dbDatasets={dbDatasets}
+            activeDbTables={activeDbTables}
+            tableRelations={tableRelations}
+            derivedFields={derivedFields}
             onApplyActions={onApplyActions}
             onConfirmWidgetProposal={onConfirmWidgetProposal}
+            onConfirmWidgetProposals={onConfirmWidgetProposals}
             onUndoWidgetLayout={onUndoWidgetLayout}
             onWidgetProposalReceived={onWidgetProposalReceived}
             chatSize={chatSize}

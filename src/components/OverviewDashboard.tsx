@@ -6,6 +6,8 @@ import { getVisibleWidgets, updateWidget, dragReorderWidget } from "@/lib/layout
 import { buildOverviewRows, overviewStatRowColumns } from "@/lib/overview-layout";
 import { resolveChartForWidget } from "@/lib/chart-builder";
 import type { TableRelation } from "@/lib/sql-query-types";
+import type { DerivedField } from "@/lib/derived-fields";
+import { sheetDataWithDerivedFields } from "@/lib/derived-fields";
 import { resolveWidgetSheetData } from "@/lib/db-table-datasets";
 import type { LayoutSyncStatus } from "@/hooks/useLayoutAutoSave";
 import { ChartCard } from "./ChartCard";
@@ -32,6 +34,7 @@ import { useToast } from "./ToastProvider";
 
 interface OverviewDashboardProps {
   data: SheetData;
+  derivedFields?: DerivedField[];
   dbDatasets?: Record<string, SheetData> | null;
   activeDbTables?: string[];
   tableRelations?: TableRelation[];
@@ -48,10 +51,12 @@ interface OverviewDashboardProps {
   onRemoveSheet: (url: string) => void;
   onToggleMerge: (enabled: boolean) => void;
   onReloadMerged: () => void;
+  onDerivedFieldsChange?: (fields: DerivedField[]) => void | Promise<void>;
 }
 
 export function OverviewDashboard({
   data,
+  derivedFields = [],
   dbDatasets,
   activeDbTables = [],
   tableRelations,
@@ -68,6 +73,7 @@ export function OverviewDashboard({
   onRemoveSheet,
   onToggleMerge,
   onReloadMerged,
+  onDerivedFieldsChange,
 }: OverviewDashboardProps) {
   const [builderOpen, setBuilderOpen] = useState(false);
   const [builderInitialShape, setBuilderInitialShape] = useState<WidgetVisualShape | undefined>();
@@ -78,7 +84,10 @@ export function OverviewDashboard({
   const { toast } = useToast();
 
   const dataForWidget = (widget: WidgetConfig) =>
-    resolveWidgetSheetData(data, dbDatasets, widget);
+    sheetDataWithDerivedFields(
+      resolveWidgetSheetData(data, dbDatasets, widget),
+      derivedFields
+    );
 
   useEffect(() => {
     onBuilderOpenChange?.(builderOpen);
@@ -396,6 +405,7 @@ export function OverviewDashboard({
         open={builderOpen}
         layout={layout}
         data={data}
+        derivedFields={derivedFields}
         dbDatasets={dbDatasets}
         activeDbTables={activeDbTables}
         tableRelations={tableRelations}
@@ -418,6 +428,7 @@ export function OverviewDashboard({
         onRemoveSheet={onRemoveSheet}
         onToggleMerge={onToggleMerge}
         onReloadMerged={onReloadMerged}
+        onDerivedFieldsChange={onDerivedFieldsChange}
       />
     </div>
   );

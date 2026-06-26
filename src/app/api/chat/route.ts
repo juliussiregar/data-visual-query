@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildActiveViewHelpHint } from "@/lib/app-help";
 import OpenAI from "openai";
-import type { ChatMessage } from "@/lib/types";
-import type { DashboardContext } from "@/lib/types";
+import type { ChatMessage, DashboardContext } from "@/lib/types";
 import { getOpenAIConfig, getOpenAIConfigError } from "@/lib/openai-config";
 import { parseAiQueryDataset } from "@/lib/ai-query-dataset";
 import { runAiChatWithTools } from "@/lib/ai-chat-runner";
 import { AuthError, requireSessionUser } from "@/lib/session-server";
+import { rolePermissions } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -32,9 +32,26 @@ function buildDashboardContextBlock(ctx: DashboardContext | undefined): string {
   const widgetLines = ctx.layoutWidgets
     .map(
       (w) =>
-        `- id:${w.id} | ${w.title} | bentuk:${w.visualShape ?? "?"} | visible:${w.visible}${w.groupByKey ? ` | grup:${w.groupByKey}` : ""}${w.measureKey ? ` | ukur:${w.measureKey}` : ""}${w.aggregation ? ` | agregasi:${w.aggregation}` : ""}`
+        `- id:${w.id} | ${w.title} | bentuk:${w.visualShape ?? "?"} | visible:${w.visible}${w.groupByKey ? ` | grup:${w.groupByKey}` : ""}${w.measureKey ? ` | ukur:${w.measureKey}` : ""}${w.aggregation ? ` | agregasi:${w.aggregation}` : ""}${w.sourceTable ? ` | tabel:${w.sourceTable}` : ""}`
     )
     .join("\n");
+
+  const tablesBlock = ctx.availableTables?.length
+    ? `\n\nTabel tersedia (project multi-tabel) — saat membuat/mengubah widget WAJIB set "sourceTable" ke nama tabel yang kolomnya dipakai:
+${ctx.availableTables
+        .map(
+          (t) =>
+            `- ${t.name}${t.label && t.label !== t.name ? ` (${t.label})` : ""} → kolom: ${t.columns
+              .map((c) => c.key)
+              .join(", ") || "—"}`
+        )
+        .join("\n")}`
+    : "";
+
+  const derivedBlock = ctx.derivedFields?.length
+    ? `\n\nKolom dihitung project (bisa dipakai query & widget; buat baru via create_derived_field + action add_derived_field):
+${ctx.derivedFields.map((f) => `- ${f.name} (key: ${f.key}) = ${f.formula}`).join("\n")}`
+    : "\n\nKolom dihitung: belum ada — user bisa minta dibuat lewat chat (create_derived_field).";
 
   return `\n\n--- DASHBOARD CONTEXT ---
 View aktif: ${ctx.activeView}
@@ -53,19 +70,20 @@ ${filterLines}
 Grafik auto-detect: ${ctx.chartTitles.join("; ")}
 
 Layout widgets:
-${widgetLines}${widgetCoaching}`;
+${widgetLines}${widgetCoaching}${tablesBlock}${derivedBlock}`;
 }
 
 export async function POST(request: NextRequest) {
   try {
-    await requireSessionUser(request);
+    const user = await requireSessionUser(request);
+    const allowSensitive = !rolePermissions(user.role).maskPII;
     const config = getOpenAIConfig();
     if (!config) {
       return NextResponse.json({ error: getOpenAIConfigError() }, { status: 500 });
     }
 
     const body = await request.json();
-    const { messages, queryDataset: rawDataset, dashboardContext } = body ?? {};
+    const { messages, queryDataset: rawDataset, dashboardContext, intent } = body ?? {};
 
     const dataset = parseAiQueryDataset(rawDataset);
     if (!dataset) {
@@ -81,7 +99,11 @@ export async function POST(request: NextRequest) {
 
     const ctx = dashboardContext as DashboardContext | undefined;
 
-    const openai = new OpenAI({ apiKey: config.apiKey });
+    const openai = new OpenAI({
+      apiKey: config.apiKey,
+      timeout: 60_000,
+      maxRetries: 2,
+    });
 
     const result = await runAiChatWithTools(
       openai,
@@ -90,15 +112,16 @@ export async function POST(request: NextRequest) {
       messages as ChatMessage[],
       {
         dashboardContextBlock: buildDashboardContextBlock(ctx),
+        intent: intent === "create_widget" ? "create_widget" : undefined,
+        allowSensitive,
       }
     );
-
-    const safeProposal = result.widgetProposal;
 
     return NextResponse.json({
       reply: result.reply,
       actions: result.actions,
-      widgetProposal: safeProposal,
+      widgetProposals: result.widgetProposals,
+      widgetProposal: result.widgetProposals[0] ?? null,
       guardrail: result.guardrail,
       suggestedFollowUps: result.suggestedFollowUps,
       queryFacts: result.queryFacts,
