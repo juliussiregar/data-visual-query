@@ -1,5 +1,5 @@
 import { aggregateData } from "./aggregation";
-import { numericColumns } from "./derived-fields";
+import { formatColumnRefForFormula, numericColumns } from "./derived-fields";
 import { parseNumber, roundMetricValue, isIdentifierColumn, inferColumnIsCurrency } from "./format";
 import { resolveColumnRef } from "./formula-engine";
 import { applyVisualQuery, type QueryCondition, type VisualQuery } from "./visual-query";
@@ -42,7 +42,8 @@ function rowsHaveMeasure(rows: Record<string, string>[], measureKey: string): bo
 }
 
 function hintForMissingMeasure(expr: string, columns: ColumnMeta[]): string | undefined {
-  const measureKey = resolveColumnRef(expr, columns) ?? expr;
+  if (expr === "*") return undefined;
+  const measureKey = resolveColumnRef(bareSqlIdent(expr), columns) ?? bareSqlIdent(expr);
   if (columns.some((c) => c.key === measureKey)) return undefined;
   const numeric = numericColumns(columns)
     .filter((c) => !isIdentifierColumn(c))
@@ -60,7 +61,7 @@ function hintForEmptyMeasure(
   const measureKey = resolveColumnRef(expr, columns) ?? expr;
   if (rowsHaveMeasure(rows, measureKey)) return undefined;
   if (!columns.some((c) => c.key === measureKey)) return undefined;
-  return `Kolom "${measureKey}" tidak punya nilai numerik di tabel ini. Periksa rumus atau pilih tabel yang benar.`;
+  return `Kolom "${measureKey}" ada di schema tapi kosong di tabel ini — rumus kolom custom mungkin butuh tabel lain (mis. student_grades, bukan students).`;
 }
 
 function collectMeasureIssues(
@@ -69,6 +70,7 @@ function collectMeasureIssues(
   columns: ColumnMeta[]
 ): string | undefined {
   for (const sel of measureSelects) {
+    if (sel.aggregation === "count" && sel.expr === "*") continue;
     const missing = hintForMissingMeasure(sel.expr, columns);
     if (missing) return missing;
     if (sel.aggregation && sel.aggregation !== "count") {
@@ -79,8 +81,67 @@ function collectMeasureIssues(
   return undefined;
 }
 
-const SELECT_RE =
-  /^SELECT\s+(.+?)\s+FROM\s+\*\s*(?:WHERE\s+([\s\S]+?))?\s*(?:GROUP\s+BY\s+(.+?))?\s*(?:ORDER\s+BY\s+(.+?))?\s*(?:LIMIT\s+(\d+))?\s*$/i;
+const BRACKET_IDENT = String.raw`\[[^\]]+\]`;
+const QUOTED_IDENT = String.raw`"[^"]+"`;
+const WORD_IDENT = String.raw`[\w][\w.]*(?:__[\w][\w.]*)?`;
+const SQL_IDENT_PATTERN = `(?:${BRACKET_IDENT}|${QUOTED_IDENT}|${WORD_IDENT})`;
+const TABLE_REF_PATTERN = `(?:${SQL_IDENT_PATTERN}|\\*)`;
+
+const SELECT_RE = new RegExp(
+  `^SELECT\\s+(.+?)\\s+FROM\\s+(${TABLE_REF_PATTERN})\\s*(?:WHERE\\s+([\\s\\S]+?))?\\s*(?:GROUP\\s+BY\\s+(.+?))?\\s*(?:ORDER\\s+BY\\s+(.+?))?\\s*(?:LIMIT\\s+(\\d+))?\\s*$`,
+  "i"
+);
+
+/** Lepas bracket/kutip berlapis → nama kolom mentah. */
+function bareSqlIdent(raw: string): string {
+  let inner = raw.trim();
+  while (true) {
+    const bracket = inner.match(/^\[(.+)\]$/);
+    if (bracket) {
+      inner = bracket[1].trim();
+      continue;
+    }
+    const quoted = inner.match(/^"(.+)"$/);
+    if (quoted) {
+      inner = quoted[1].trim();
+      continue;
+    }
+    break;
+  }
+  return inner;
+}
+
+/** Bungkus nama kolom/tabel yang ber-spasi atau karakter khusus, mis. [math score]. */
+export function formatVisualSqlRef(key: string): string {
+  return formatColumnRefForFormula(bareSqlIdent(key));
+}
+
+function unquoteSqlIdent(raw: string): string {
+  return bareSqlIdent(raw);
+}
+
+/** Klausul FROM untuk query editor — pakai nama tabel nyata, bukan bintang. */
+export function visualSqlFromClause(tableRef?: string): string {
+  const trimmed = tableRef?.trim();
+  return trimmed ? `FROM ${formatVisualSqlRef(trimmed)}` : "FROM *";
+}
+
+export function parseVisualSqlTableRef(sql: string): string | null {
+  const match = sql.trim().match(new RegExp(`\\bFROM\\s+(${TABLE_REF_PATTERN})`, "i"));
+  if (!match) return null;
+  const raw = match[1];
+  return raw === "*" ? null : unquoteSqlIdent(raw);
+}
+
+export function withVisualSqlTable(sql: string, tableRef: string): string {
+  const ref = tableRef.trim();
+  if (!ref) return sql;
+  const fromClause = visualSqlFromClause(ref);
+  if (/\bFROM\s+/i.test(sql)) {
+    return sql.replace(new RegExp(`\\bFROM\\s+${TABLE_REF_PATTERN}`, "i"), fromClause);
+  }
+  return `${sql.trim()} ${fromClause}`.trim();
+}
 
 const AVG_RE = /^AVG\s*\(\s*(.+?)\s*\)$/i;
 const SUM_RE = /^SUM\s*\(\s*(.+?)\s*\)$/i;
@@ -113,18 +174,18 @@ function parseSelectItem(raw: string): VisualSqlSelectItem {
   const alias = aliasMatch ? aliasMatch[2] : expr.replace(/[^\w]/g, "_").toLowerCase() || "col";
 
   if (COUNT_RE.test(expr)) {
-    return { expr: "*", alias, aggregation: "count" };
+    return { expr: "*", alias: aliasMatch ? aliasMatch[2] : "count", aggregation: "count" };
   }
   const avg = expr.match(AVG_RE);
-  if (avg) return { expr: avg[1].trim(), alias, aggregation: "avg" };
+  if (avg) return { expr: bareSqlIdent(avg[1].trim()), alias, aggregation: "avg" };
   const sum = expr.match(SUM_RE);
-  if (sum) return { expr: sum[1].trim(), alias, aggregation: "sum" };
+  if (sum) return { expr: bareSqlIdent(sum[1].trim()), alias, aggregation: "sum" };
   const min = expr.match(MIN_RE);
-  if (min) return { expr: min[1].trim(), alias, aggregation: "min" };
+  if (min) return { expr: bareSqlIdent(min[1].trim()), alias, aggregation: "min" };
   const max = expr.match(MAX_RE);
-  if (max) return { expr: max[1].trim(), alias, aggregation: "max" };
+  if (max) return { expr: bareSqlIdent(max[1].trim()), alias, aggregation: "max" };
 
-  return { expr, alias, isGroupKey: true };
+  return { expr: bareSqlIdent(expr), alias, isGroupKey: true };
 }
 
 function parseWhereClause(where: string, columns: ColumnMeta[]): QueryCondition[] {
@@ -160,20 +221,65 @@ function parseWhereClause(where: string, columns: ColumnMeta[]): QueryCondition[
   return conditions;
 }
 
+/** Perbaiki query lama tanpa bracket untuk kolom/tabel ber-spasi. */
+export function normalizeVisualSql(input: string, columns: ColumnMeta[], tableRef?: string): string {
+  let out = input.trim().replace(/\s+/g, " ");
+  if (!out) return out;
+
+  if (tableRef?.includes(" ")) {
+    const formatted = formatVisualSqlRef(tableRef);
+    if (!out.includes(`FROM ${formatted}`)) {
+      out = out.replace(
+        /\bFROM\s+(.+?)(?=\s+(?:WHERE|GROUP\s+BY|ORDER\s+BY|LIMIT)\b|$)/i,
+        `FROM ${formatted}`
+      );
+    }
+  }
+
+  const keys = [...columns]
+    .map((c) => c.key)
+    .filter((k) => k && (k.includes(" ") || !/^[A-Za-z_][\w]*$/.test(k)))
+    .sort((a, b) => b.length - a.length);
+
+  for (const key of keys) {
+    const ref = formatVisualSqlRef(key);
+    for (const fn of ["AVG", "SUM", "MIN", "MAX"]) {
+      out = out.replace(
+        new RegExp(`\\b${fn}\\s*\\(\\s*\\[+${escapeRegExp(key)}\\]+\\s*\\)`, "gi"),
+        `${fn}(${ref})`
+      );
+      out = out.replace(
+        new RegExp(`\\b${fn}\\s*\\(\\s*${escapeRegExp(key)}\\s*\\)`, "gi"),
+        `${fn}(${ref})`
+      );
+    }
+    out = out.replace(
+      new RegExp(`(?<=[,\\s])${escapeRegExp(key)}(?=\\s*(?:,|GROUP\\s+BY|WHERE|ORDER\\s+BY|LIMIT|$))`, "gi"),
+      ref
+    );
+    out = out.replace(
+      new RegExp(`\\bGROUP\\s+BY\\s+${escapeRegExp(key)}(?=\\s*(?:,|ORDER\\s+BY|LIMIT|$))`, "gi"),
+      `GROUP BY ${ref}`
+    );
+  }
+
+  return out;
+}
+
 export function parseVisualSql(input: string): { query?: VisualSqlQuery; error?: string } {
   const sql = input.trim().replace(/\s+/g, " ");
   const match = sql.match(SELECT_RE);
   if (!match) {
     return {
       error:
-        "Format: SELECT kolom, AVG(ukuran) FROM * [WHERE status = 'A'] GROUP BY kolom [ORDER BY avg_ukuran DESC] [LIMIT 12]",
+        "Format: SELECT kolom, AVG([ukuran]) FROM [nama tabel] [WHERE status = 'A'] GROUP BY kolom [ORDER BY avg_ukuran DESC] [LIMIT 12]",
     };
   }
 
-  const [, selectPart, wherePart, groupPart, orderPart, limitPart] = match;
+  const [, selectPart, , groupPart, orderPart, limitPart] = match;
   const selects = splitSelectList(selectPart).map(parseSelectItem);
   const groupBy = groupPart
-    ? groupPart.split(",").map((g) => g.trim()).filter(Boolean)
+    ? splitSelectList(groupPart).map((g) => unquoteSqlIdent(g.trim())).filter(Boolean)
     : selects.filter((s) => s.isGroupKey).map((s) => s.expr);
 
   let orderBy: VisualSqlQuery["orderBy"];
@@ -198,15 +304,22 @@ export function parseVisualSql(input: string): { query?: VisualSqlQuery; error?:
 export function executeVisualSql(
   data: SheetData,
   input: string,
-  columns: ColumnMeta[] = data.columns
+  columns: ColumnMeta[] = data.columns,
+  activeTableRef?: string
 ): VisualSqlResult {
-  const parsed = parseVisualSql(input);
+  const tableRef =
+    activeTableRef ??
+    (data.dataset?.name && data.dataset.name !== "default" ? data.dataset.name : undefined) ??
+    parseVisualSqlTableRef(input) ??
+    undefined;
+  const sql = normalizeVisualSql(input, columns, tableRef);
+  const parsed = parseVisualSql(sql);
   if (parsed.error || !parsed.query) {
     return { query: parsed.query ?? { selects: [], groupBy: [], conditions: [] }, summary: "", rows: [], error: parsed.error };
   }
 
   const query = { ...parsed.query };
-  const whereMatch = input.match(/WHERE\s+([\s\S]+?)(?:\s+GROUP\s+BY|\s+ORDER\s+BY|\s+LIMIT|$)/i);
+  const whereMatch = sql.match(/WHERE\s+([\s\S]+?)(?:\s+GROUP\s+BY|\s+ORDER\s+BY|\s+LIMIT|$)/i);
   if (whereMatch) {
     query.conditions = parseWhereClause(whereMatch[1], columns);
   }
@@ -314,13 +427,33 @@ export function executeVisualSql(
 
   const measureSelect = measureSelects[0];
 
+  if (!groupKey && measureSelect?.aggregation === "count" && measureSelect.expr === "*") {
+    const total = rows.length;
+    const alias = measureSelect.alias || "count";
+    const chartPoint = { name: "Total", value: total };
+    return {
+      query,
+      summary: `COUNT(*) = ${total.toLocaleString("id-ID")}`,
+      rows: [{ [alias]: total }],
+      chart: {
+        categoryKey: "_total",
+        measureKey: "*",
+        aggregation: "count",
+        data: [chartPoint],
+      },
+    };
+  }
+
   if (groupKey && measureSelect?.aggregation) {
-    const measureKey = resolveColumnRef(measureSelect.expr, columns) ?? measureSelect.expr;
+    const measureKey =
+      measureSelect.aggregation === "count" && measureSelect.expr === "*"
+        ? "*"
+        : resolveColumnRef(measureSelect.expr, columns) ?? measureSelect.expr;
     const agg = measureSelect.aggregation;
     let chartData = aggregateData(
       rows,
       groupKey,
-      agg === "count" ? undefined : measureKey,
+      agg === "count" ? undefined : measureKey === "*" ? undefined : measureKey,
       agg === "count" ? "count" : agg
     );
 
@@ -429,6 +562,7 @@ function firstDimension(columns: ColumnMeta[]): string | null {
     columns,
     "region",
     "zone",
+    "gender",
     "jurusan",
     "metric",
     "device_code",
@@ -461,50 +595,94 @@ function firstDimension(columns: ColumnMeta[]): string | null {
   return fk?.key ?? null;
 }
 
+/** Kolom kategori/teks untuk preview baris (bukan agregasi). */
+function previewDimensionColumns(columns: ColumnMeta[], max = 3): string[] {
+  return columns
+    .filter(
+      (c) =>
+        c.key.trim() &&
+        c.key !== "id" &&
+        !isIdentifierColumn(c) &&
+        (c.type === "category" || c.type === "text" || c.semanticRole === "dimension")
+    )
+    .slice(0, max)
+    .map((c) => c.key);
+}
+
 /** Contoh query SQL-like dari kolom tabel aktif (tanpa asumsi nama kolom khusus). */
-export function visualSqlExamplesForColumns(columns: ColumnMeta[]): string[] {
+export function visualSqlExamplesForColumns(
+  columns: ColumnMeta[],
+  tableRef?: string
+): string[] {
   if (!columns.length) return [];
 
+  const from = visualSqlFromClause(tableRef);
   const group = firstDimension(columns);
   const measure = measureColumn(columns);
+  const preview = previewDimensionColumns(columns);
+
+  const ref = (key: string) => formatVisualSqlRef(key);
 
   if (group && measure) {
-    const examples = [`SELECT ${group}, AVG(${measure}) FROM * GROUP BY ${group}`];
+    const examples = [`SELECT ${ref(group)}, AVG(${ref(measure)}) ${from} GROUP BY ${ref(group)}`];
 
     const numbers = numericColumns(columns).filter((c) => !isIdentifierColumn(c));
     if (numbers.length >= 3) {
       const multi = numbers
         .slice(0, 3)
-        .map((c) => `AVG(${c.key})`)
+        .map((c) => `AVG(${ref(c.key)})`)
         .join(", ");
-      examples.push(`SELECT ${group}, ${multi} FROM * GROUP BY ${group}`);
+      examples.push(`SELECT ${ref(group)}, ${multi} ${from} GROUP BY ${ref(group)}`);
     }
 
     const sampleCat = columns.find((c) => c.type === "category" && c.sampleValues?.[0])?.sampleValues?.[0];
     if (sampleCat) {
       examples.push(
-        `SELECT ${group}, AVG(${measure}) FROM * WHERE ${group} = '${sampleCat}' GROUP BY ${group}`
+        `SELECT ${ref(group)}, AVG(${ref(measure)}) ${from} WHERE ${ref(group)} = '${sampleCat}' GROUP BY ${ref(group)}`
       );
     }
 
     return examples;
   }
 
-  if (measure) {
-    return [`SELECT ${group ?? "id"}, SUM(${measure}) FROM * GROUP BY ${group ?? "id"}`];
+  if (group && !measure) {
+    const examples: string[] = [];
+    if (preview.length > 0) {
+      examples.push(`SELECT ${preview.map(ref).join(", ")} ${from}`);
+    }
+    examples.push(`SELECT ${ref(group)}, COUNT(*) ${from} GROUP BY ${ref(group)}`);
+    return examples;
   }
 
-  return [];
+  if (measure) {
+    const dim = group ?? "id";
+    return [`SELECT ${ref(dim)}, SUM(${ref(measure)}) ${from} GROUP BY ${ref(dim)}`];
+  }
+
+  if (preview.length > 0) {
+    return [`SELECT ${preview.map(ref).join(", ")} ${from}`];
+  }
+
+  return [`SELECT COUNT(*) ${from}`];
 }
 
-export function defaultVisualSqlForColumns(columns: ColumnMeta[]): string {
-  const examples = visualSqlExamplesForColumns(columns);
-  if (examples[0]) return examples[0];
-  return "SELECT COUNT(*) FROM *";
+export function defaultVisualSqlForColumns(columns: ColumnMeta[], tableRef?: string): string {
+  return visualSqlExamplesForColumns(columns, tableRef)[0] ?? `SELECT COUNT(*) ${visualSqlFromClause(tableRef)}`;
 }
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function avgMeasureRegex(columnKey: string, flags = "i"): RegExp {
+  const bare = escapeRegExp(bareSqlIdent(columnKey));
+  return new RegExp(`AVG\\s*\\(\\s*\\[*${bare}\\]*\\s*\\)`, flags);
+}
+
+function dimensionRefRegex(columnKey: string, flags = "i"): RegExp {
+  const bare = escapeRegExp(bareSqlIdent(columnKey));
+  const ref = escapeRegExp(formatVisualSqlRef(columnKey));
+  return new RegExp(`(?:${ref}|\\[*${bare}\\]*)`, flags);
 }
 
 function aggExpr(aggregation: VisualSqlAggregation, expr: string): string {
@@ -513,8 +691,11 @@ function aggExpr(aggregation: VisualSqlAggregation, expr: string): string {
 }
 
 function selectItemToSql(item: VisualSqlSelectItem): string {
-  if (item.aggregation) return aggExpr(item.aggregation, item.expr);
-  return item.expr;
+  if (item.aggregation) {
+    if (item.aggregation === "count" && item.expr === "*") return "COUNT(*)";
+    return aggExpr(item.aggregation, formatVisualSqlRef(item.expr));
+  }
+  return formatVisualSqlRef(item.expr);
 }
 
 /** Kolom yang direferensikan di query SQL-like (SELECT, GROUP BY, agregat). */
@@ -523,10 +704,12 @@ export function columnKeysInVisualSql(sql: string, columns: ColumnMeta[]): strin
   for (const col of columns) {
     const key = col.key;
     const patterns = [
+      avgMeasureRegex(key),
+      new RegExp(`\\bSUM\\s*\\(\\s*\\[*${escapeRegExp(bareSqlIdent(key))}\\]*\\s*\\)`, "i"),
+      new RegExp(`\\bMIN\\s*\\(\\s*\\[*${escapeRegExp(bareSqlIdent(key))}\\]*\\s*\\)`, "i"),
+      new RegExp(`\\bMAX\\s*\\(\\s*\\[*${escapeRegExp(bareSqlIdent(key))}\\]*\\s*\\)`, "i"),
+      dimensionRefRegex(key),
       new RegExp(`\\bAVG\\s*\\(\\s*${escapeRegExp(key)}\\s*\\)`, "i"),
-      new RegExp(`\\bSUM\\s*\\(\\s*${escapeRegExp(key)}\\s*\\)`, "i"),
-      new RegExp(`\\bMIN\\s*\\(\\s*${escapeRegExp(key)}\\s*\\)`, "i"),
-      new RegExp(`\\bMAX\\s*\\(\\s*${escapeRegExp(key)}\\s*\\)`, "i"),
       new RegExp(`\\b${escapeRegExp(key)}\\b`),
     ];
     if (patterns.some((re) => re.test(sql))) found.push(key);
@@ -539,32 +722,34 @@ function isMeasureColumn(columnKey: string, columns: ColumnMeta[]): boolean {
 }
 
 function addMeasureToSql(sql: string, columnKey: string, columns: ColumnMeta[]): string {
-  const expr = `AVG(${columnKey})`;
-  if (new RegExp(`\\bAVG\\s*\\(\\s*${escapeRegExp(columnKey)}\\s*\\)`, "i").test(sql)) {
+  const ref = formatVisualSqlRef(columnKey);
+  const expr = `AVG(${ref})`;
+  if (avgMeasureRegex(columnKey).test(sql)) {
     return sql;
   }
-  const match = sql.match(/^SELECT\s+([\s\S]+?)\s+FROM\s+\*/i);
+  const tableRef = parseVisualSqlTableRef(sql);
+  const from = visualSqlFromClause(tableRef ?? undefined);
+  const fromTokenMatch = sql.match(new RegExp(`\\bFROM\\s+(${TABLE_REF_PATTERN})`, "i"));
+  const fromToken = fromTokenMatch?.[1] ?? (tableRef ? formatVisualSqlRef(tableRef) : "*");
+  const match = sql.match(
+    new RegExp(`^SELECT\\s+([\\s\\S]+?)\\s+FROM\\s+${TABLE_REF_PATTERN}`, "i")
+  );
   if (!match) {
     const group = firstDimension(columns) ?? columnKey;
-    return `SELECT ${group}, ${expr} FROM * GROUP BY ${group}`;
+    return `SELECT ${formatVisualSqlRef(group)}, ${expr} ${from} GROUP BY ${formatVisualSqlRef(group)}`;
   }
-  return sql.replace(/^SELECT\s+([\s\S]+?)\s+FROM\s+\*/i, `SELECT $1, ${expr} FROM *`);
+  return sql.replace(
+    new RegExp(`^SELECT\\s+([\\s\\S]+?)\\s+FROM\\s+${TABLE_REF_PATTERN}`, "i"),
+    `SELECT $1, ${expr} FROM ${fromToken}`
+  );
 }
 
 function removeMeasureFromSql(sql: string, columnKey: string): string {
+  const avg = avgMeasureRegex(columnKey, "gi");
   let next = sql;
-  next = next.replace(
-    new RegExp(`,\\s*AVG\\s*\\(\\s*${escapeRegExp(columnKey)}\\s*\\)`, "gi"),
-    ""
-  );
-  next = next.replace(
-    new RegExp(`AVG\\s*\\(\\s*${escapeRegExp(columnKey)}\\s*\\)\\s*,\\s*`, "gi"),
-    ""
-  );
-  next = next.replace(
-    new RegExp(`\\bAVG\\s*\\(\\s*${escapeRegExp(columnKey)}\\s*\\)`, "gi"),
-    ""
-  );
+  next = next.replace(new RegExp(`,\\s*${avg.source}`, avg.flags), "");
+  next = next.replace(new RegExp(`${avg.source}\\s*,\\s*`, avg.flags), "");
+  next = next.replace(avg, "");
   next = next.replace(/SELECT\s+,/i, "SELECT ");
   next = next.replace(/,\s*,/g, ",");
   return next.trim();
@@ -588,9 +773,11 @@ function preserveSqlTail(sql: string): {
 function rebuildVisualSql(
   selectParts: string[],
   groupBy: string[],
-  tail: ReturnType<typeof preserveSqlTail>
+  tail: ReturnType<typeof preserveSqlTail>,
+  tableRef?: string | null
 ): string {
-  let sql = `SELECT ${selectParts.filter(Boolean).join(", ")} FROM *`;
+  const from = visualSqlFromClause(tableRef ?? undefined);
+  let sql = `SELECT ${selectParts.filter(Boolean).join(", ")} ${from}`;
   if (tail.where) sql += ` WHERE ${tail.where}`;
   if (groupBy.length > 0) sql += ` GROUP BY ${groupBy.join(", ")}`;
   if (tail.orderBy) sql += ` ORDER BY ${tail.orderBy}`;
@@ -601,6 +788,7 @@ function rebuildVisualSql(
 function setGroupDimension(sql: string, columnKey: string, columns: ColumnMeta[]): string {
   const parsed = parseVisualSql(sql);
   const tail = preserveSqlTail(sql);
+  const tableRef = parseVisualSqlTableRef(sql);
 
   let measureParts: string[] = [];
   if (parsed.query) {
@@ -610,10 +798,11 @@ function setGroupDimension(sql: string, columnKey: string, columns: ColumnMeta[]
   }
   if (measureParts.length === 0) {
     const num = numericColumns(columns).find((c) => c.key !== columnKey);
-    measureParts = num ? [`AVG(${num.key})`] : ["COUNT(*)"];
+    measureParts = num ? [`AVG(${formatVisualSqlRef(num.key)})`] : ["COUNT(*)"];
   }
 
-  return rebuildVisualSql([columnKey, ...measureParts], [columnKey], tail);
+  const dimRef = formatVisualSqlRef(columnKey);
+  return rebuildVisualSql([dimRef, ...measureParts], [dimRef], tail, tableRef);
 }
 
 function removeGroupDimension(sql: string, columnKey: string, columns: ColumnMeta[]): string {
@@ -621,6 +810,7 @@ function removeGroupDimension(sql: string, columnKey: string, columns: ColumnMet
   if (!parsed.query) return sql;
 
   const tail = preserveSqlTail(sql);
+  const tableRef = parseVisualSqlTableRef(sql);
   const groupKeys = parsed.query.groupBy.filter(
     (g) => resolveColumnRef(g, columns) !== columnKey && g !== columnKey
   );
@@ -633,9 +823,10 @@ function removeGroupDimension(sql: string, columnKey: string, columns: ColumnMet
       measureParts.length > 0
         ? measureParts
         : numericColumns(columns).length > 0
-          ? [`AVG(${numericColumns(columns)[0].key})`]
+          ? [`AVG(${formatVisualSqlRef(numericColumns(columns)[0].key)})`]
           : ["COUNT(*)"];
-    let sql = `SELECT ${parts.join(", ")} FROM *`;
+    const from = visualSqlFromClause(tableRef ?? undefined);
+    let sql = `SELECT ${parts.join(", ")} ${from}`;
     if (tail.where) sql += ` WHERE ${tail.where}`;
     if (tail.orderBy) sql += ` ORDER BY ${tail.orderBy}`;
     if (tail.limit) sql += ` LIMIT ${tail.limit}`;
@@ -645,10 +836,10 @@ function removeGroupDimension(sql: string, columnKey: string, columns: ColumnMet
   const nextGroup = groupKeys[0];
   const dims = parsed.query.selects
     .filter((s) => !s.aggregation && resolveColumnRef(s.expr, columns) !== columnKey)
-    .map((s) => s.expr);
-  const selectParts = [dims[0] ?? nextGroup, ...measureParts];
+    .map((s) => formatVisualSqlRef(s.expr));
+  const selectParts = [dims[0] ?? formatVisualSqlRef(nextGroup), ...measureParts];
 
-  return rebuildVisualSql(selectParts, groupKeys, tail);
+  return rebuildVisualSql(selectParts, groupKeys, tail, tableRef);
 }
 
 /** Tambah/hapus kolom dari query dengan toggle chip di sidebar. */
@@ -656,19 +847,23 @@ export function toggleVisualSqlColumn(
   sql: string,
   columnKey: string,
   columns: ColumnMeta[],
-  select: boolean
+  select: boolean,
+  activeTableRef?: string
 ): string {
   const col = columns.find((c) => c.key === columnKey);
   if (!col) return sql;
 
-  const referenced = columnKeysInVisualSql(sql, columns).includes(columnKey);
-  if (select === referenced) return sql;
+  const next = normalizeVisualSql(sql, columns, activeTableRef);
+  const referenced = columnKeysInVisualSql(next, columns).includes(columnKey);
+  if (select === referenced) return next;
 
   if (isMeasureColumn(columnKey, columns)) {
-    return select ? addMeasureToSql(sql, columnKey, columns) : removeMeasureFromSql(sql, columnKey);
+    return select
+      ? addMeasureToSql(next, columnKey, columns)
+      : removeMeasureFromSql(next, columnKey);
   }
 
   return select
-    ? setGroupDimension(sql, columnKey, columns)
-    : removeGroupDimension(sql, columnKey, columns);
+    ? setGroupDimension(next, columnKey, columns)
+    : removeGroupDimension(next, columnKey, columns);
 }

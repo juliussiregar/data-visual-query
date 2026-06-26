@@ -30,8 +30,7 @@ import {
 import { createQueryDashboardWidgets } from "../src/lib/query-widget";
 import { buildTableFromVisualSqlWidget } from "../src/lib/widget-data";
 import { evaluateAggregateFormula, evaluateRowExpression } from "../src/lib/formula-engine";
-import { executeVisualSql, parseVisualSql, chartConfigFromVisualSqlResult, columnKeysInVisualSql, toggleVisualSqlColumn } from "../src/lib/visual-sql";
-import { visualSqlExamplesForColumns } from "../src/lib/visual-sql";
+import { executeVisualSql, parseVisualSql, normalizeVisualSql, chartConfigFromVisualSqlResult, columnKeysInVisualSql, toggleVisualSqlColumn, visualSqlExamplesForColumns } from "../src/lib/visual-sql";
 import { executeAiQueryTool } from "../src/lib/ai-query-tools";
 import { analyzeSheetData } from "../src/lib/analyzer";
 import { isIdentifierColumn, inferColumnIsCurrency } from "../src/lib/format";
@@ -243,6 +242,19 @@ function testDerivedFields(healthRows: Record<string, string>[], gradeRows: Reco
     String(spacedDerived.rows[1]?.total_3_kolom)
   );
 
+  const spacedValidation = validateNewDerivedField(
+    "Total Nilai",
+    "[math score] + [reading score] + [writing score]",
+    sheetFromRows(sheetRows),
+    [],
+    "total_nilai"
+  );
+  assert(
+    "Validasi rumus kolom ber-spasi dengan bracket",
+    spacedValidation.ok === true,
+    spacedValidation.ok ? "" : spacedValidation.error
+  );
+
   const eduFields = [createDerivedField("IPA", "tugas + fisika + biologi", "ipa")];
   const withEduDerived = applyDerivedFields(gradeSheet, eduFields);
   assert("Education: kolom IPA (user-defined)", Boolean(withEduDerived.rows[0]?.ipa), withEduDerived.rows[0]?.ipa);
@@ -396,6 +408,62 @@ function testVisualSql(healthRows: Record<string, string>[], gradeRows: Record<s
     "Toggle metrik IoT dinamis",
     iotWithPeak.includes("AVG(peak_load)"),
     iotWithPeak
+  );
+
+  const examCols: ColumnMeta[] = [
+    { key: "gender", label: "gender", type: "category" },
+    { key: "race/ethnicity", label: "race/ethnicity", type: "category" },
+    { key: "parental level of education", label: "parental level of education", type: "category" },
+    { key: "lunch", label: "lunch", type: "category" },
+    { key: "test preparation course", label: "test preparation course", type: "category" },
+    { key: "math score", label: "math score", type: "number" },
+    { key: "reading score", label: "reading score", type: "number" },
+    { key: "writing score", label: "writing score", type: "number" },
+  ];
+  const examTable = "Students Performance in Exams";
+  const examExamples = visualSqlExamplesForColumns(examCols, examTable);
+  assert(
+    "Contoh SQL kolom ber-spasi pakai bracket",
+    examExamples[0]?.includes("[math score]") && examExamples[0]?.includes(`FROM [${examTable}]`),
+    examExamples[0]
+  );
+
+  const examRows = [
+    { gender: "female", "math score": "72", "reading score": "80", "writing score": "68" },
+    { gender: "male", "math score": "90", "reading score": "85", "writing score": "88" },
+    { gender: "female", "math score": "65", "reading score": "70", "writing score": "75" },
+  ];
+  const legacyExamSql =
+    "SELECT gender, AVG(math score) FROM Students Performance in Exams GROUP BY gender";
+  const normalizedExam = normalizeVisualSql(legacyExamSql, examCols, examTable);
+  const examParsed = parseVisualSql(normalizedExam);
+  assert(
+    "Parse SQL legacy kolom/tabel ber-spasi",
+    !examParsed.error && Boolean(examParsed.query),
+    examParsed.error ?? normalizedExam
+  );
+
+  const examResult = executeVisualSql(
+    sheetFromRows(examRows),
+    legacyExamSql,
+    examCols,
+    examTable
+  );
+  assert(
+    "Execute SQL kolom/tabel ber-spasi",
+    !examResult.error && (examResult.chart?.data.length ?? 0) === 2,
+    examResult.error ?? `${examResult.chart?.data.length} grup`
+  );
+
+  let spacedToggleSql =
+    "SELECT gender, AVG([math score]) FROM [Students Performance in Exams] GROUP BY gender";
+  spacedToggleSql = toggleVisualSqlColumn(spacedToggleSql, "reading score", examCols, true, examTable);
+  spacedToggleSql = toggleVisualSqlColumn(spacedToggleSql, "reading score", examCols, false, examTable);
+  spacedToggleSql = toggleVisualSqlColumn(spacedToggleSql, "math score", examCols, true, examTable);
+  assert(
+    "Toggle metrik ber-spasi tanpa bracket berlapis",
+    spacedToggleSql.includes("AVG([math score])") && !spacedToggleSql.includes("[["),
+    spacedToggleSql
   );
 }
 
