@@ -17,20 +17,31 @@ export interface SqlTableInfo {
   fullName: string;
 }
 
+/** Opsi tipe database di form koneksi (urutan tampilan UI). */
+export const SQL_DATABASE_TYPES: DatabaseType[] = ["postgresql", "mysql", "mariadb"];
+
+export function isMysqlFamily(type: DatabaseType): boolean {
+  return type === "mysql" || type === "mariadb";
+}
+
 export function normalizeDatabaseType(value: unknown): DatabaseType {
-  return value === "mysql" ? "mysql" : "postgresql";
+  if (value === "mysql") return "mysql";
+  if (value === "mariadb") return "mariadb";
+  return "postgresql";
 }
 
 export function databaseTypeLabel(type: DatabaseType): string {
-  return type === "mysql" ? "MySQL" : "PostgreSQL";
+  if (type === "mysql") return "MySQL";
+  if (type === "mariadb") return "MariaDB";
+  return "PostgreSQL";
 }
 
 export function defaultPortForType(type: DatabaseType): number {
-  return type === "mysql" ? 3306 : 5432;
+  return isMysqlFamily(type) ? 3306 : 5432;
 }
 
 export function defaultSchemaForType(type: DatabaseType, database: string): string {
-  return type === "mysql" ? database : "public";
+  return isMysqlFamily(type) ? database : "public";
 }
 
 export function rowToRecord(row: Record<string, unknown>): Record<string, string> {
@@ -42,10 +53,19 @@ export function rowToRecord(row: Record<string, unknown>): Record<string, string
 }
 
 export function sqlSourceLabel(config: SqlConnectionConfig): string {
-  const scheme = config.type === "mysql" ? "mysql" : "postgres";
+  const scheme =
+    config.type === "postgresql"
+      ? "postgres"
+      : config.type === "mariadb"
+        ? "mariadb"
+        : "mysql";
   return `${scheme}://${config.host}:${config.port}/${config.database}`;
 }
 
-export function datasetSourceType(type: DatabaseType): "postgresql" | "mysql" {
-  return type === "mysql" ? "mysql" : "postgresql";
+export function datasetSourceType(
+  type: DatabaseType
+): "postgresql" | "mysql" | "mariadb" {
+  if (type === "mysql") return "mysql";
+  if (type === "mariadb") return "mariadb";
+  return "postgresql";
 }

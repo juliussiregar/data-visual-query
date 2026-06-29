@@ -1,6 +1,6 @@
 # SheetVision
 
-Workspace BI untuk mengubah **Google Sheet** atau **database SQL** (PostgreSQL / MySQL) menjadi dashboard interaktif — dengan widget builder visual, filter tanpa SQL, dan chat AI opsional.
+Workspace BI untuk mengubah **Google Sheet** atau **database SQL** (PostgreSQL / MySQL / MariaDB) menjadi dashboard interaktif — dengan widget builder visual, filter tanpa SQL, dan chat AI opsional.
 
 ## Fitur utama
 
@@ -202,6 +202,18 @@ npm run mysql:seed
 | Database | `retail_analytics` |
 | User | `retail_reader` |
 | Password | `retail_reader` (atau `MYSQL_ANALYTICS_DB_READER_PASSWORD`) |
+
+## MariaDB
+
+MariaDB memakai protokol yang sama dengan MySQL. Di **Sources** atau wizard project, pilih tipe **MariaDB** (bukan MySQL) agar label koneksi dan lineage jelas.
+
+| Field | Nilai tipikal |
+|-------|----------------|
+| Tipe | **MariaDB** |
+| Port | `3306` |
+| Host / Database / User / Password | Sesuai server MariaDB Anda |
+
+Driver internal tetap `mysql2` — load tabel, join, dan widget berperilaku sama seperti MySQL.
 
 ## Perintah berguna
 

@@ -1,5 +1,5 @@
 import type { SqlConnectionConfig } from "@/lib/connectors/sql-types";
-import { defaultSchemaForType } from "@/lib/connectors/sql-types";
+import { defaultSchemaForType, isMysqlFamily } from "@/lib/connectors/sql-types";
 import { buildJoinSelectSql } from "@/lib/sql-join-builder";
 import type { SqlJoinQuerySpec, SqlQuerySpec } from "@/lib/sql-query-types";
 import { isSqlJoinQuerySpec } from "@/lib/sql-query-types";
@@ -18,7 +18,7 @@ async function listSqlTableColumns(
   config: SqlConnectionConfig,
   tableName: string
 ): Promise<string[]> {
-  if (config.type === "mysql") return listMysqlTableColumns(config, tableName);
+  if (isMysqlFamily(config.type)) return listMysqlTableColumns(config, tableName);
   return listPostgresTableColumns(config, tableName);
 }
 
@@ -27,7 +27,7 @@ async function executeSqlRead(
   sql: string,
   params: unknown[]
 ): Promise<Record<string, string>[]> {
-  if (config.type === "mysql") return executeMysqlQuery(config, sql, params);
+  if (isMysqlFamily(config.type)) return executeMysqlQuery(config, sql, params);
   return executePostgresQuery(config, sql, params);
 }
 

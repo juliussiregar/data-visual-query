@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Sheet,
@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { truncateUrl, deriveSheetLabel } from "@/lib/sheet-storage";
 import { detectSourcesKind, formatDbTableLabel, databaseKindLabel } from "@/lib/data-source-labels";
+import { DB_TABLE_SEARCH_MIN, filterDbTableNames } from "@/lib/db-table-filter";
+import { DbTableSearchBar } from "./DbTableSelect";
 import { getProjectShareUrl } from "@/lib/project-storage";
 import { cn } from "@/lib/utils";
 
@@ -71,6 +73,7 @@ export function SheetManagerMenu({
   const [mounted, setMounted] = useState(false);
   const [tab, setTab] = useState<"switch" | "merge">("switch");
   const [sheetInput, setSheetInput] = useState("");
+  const [tableSearchQuery, setTableSearchQuery] = useState("");
   const [copied, setCopied] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
 
@@ -87,6 +90,15 @@ export function SheetManagerMenu({
   const isMulti = isDatabase ? activeDbTables.length > 1 : sheetUrls.length > 1;
   const projectSheets = projectSheetUrls.length > 0 ? projectSheetUrls : sheetUrls;
   const tableCount = isDatabase ? activeDbTables.length : sheetUrls.length;
+
+  const filteredDbTables = useMemo(
+    () => filterDbTableNames(activeDbTables, tableSearchQuery, formatDbTableLabel),
+    [activeDbTables, tableSearchQuery]
+  );
+
+  useEffect(() => {
+    if (!open) setTableSearchQuery("");
+  }, [open]);
 
   useEffect(() => setMounted(true), []);
 
@@ -216,32 +228,47 @@ export function SheetManagerMenu({
                   Belum ada tabel. Atur di pengaturan project.
                 </p>
               ) : (
-                <ul className="space-y-1">
-                  {activeDbTables.map((table) => {
-                    const isActive = selectedTable === table;
-                    return (
-                      <li key={table}>
-                        <button
-                          type="button"
-                          disabled={loading || isActive}
-                          onClick={() => {
-                            onSelectTable?.(table);
-                            setOpen(false);
-                          }}
-                          className={cn(
-                            "w-full rounded-xl p-2 text-left transition-colors hover:bg-slate-50 disabled:opacity-60",
-                            isActive && "bg-violet-50 ring-1 ring-violet-200"
-                          )}
-                        >
-                          <p className="truncate text-xs font-medium text-slate-900">
-                            {formatDbTableLabel(table)}
-                          </p>
-                          <p className="truncate text-[10px] text-slate-500">{table}</p>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
+                <>
+                  {activeDbTables.length >= DB_TABLE_SEARCH_MIN && (
+                    <div className="mb-2">
+                      <DbTableSearchBar
+                        value={tableSearchQuery}
+                        onChange={setTableSearchQuery}
+                      />
+                    </div>
+                  )}
+                  {filteredDbTables.length === 0 ? (
+                    <p className="px-2 py-4 text-center text-xs text-slate-400">
+                      Tidak ada tabel cocok dengan &ldquo;{tableSearchQuery}&rdquo;
+                    </p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {filteredDbTables.map((table) => {
+                        const isActive = selectedTable === table;
+                        return (
+                          <li key={table}>
+                            <button
+                              type="button"
+                              disabled={loading || isActive}
+                              onClick={() => {
+                                onSelectTable?.(table);
+                                setOpen(false);
+                              }}
+                              className={cn(
+                                "w-full rounded-xl p-2 text-left transition-colors hover:bg-slate-50 disabled:opacity-60",
+                                isActive && "bg-violet-50 ring-1 ring-violet-200"
+                              )}
+                            >
+                              <p className="truncate text-xs font-medium text-slate-900">
+                                {formatDbTableLabel(table)}
+                              </p>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </>
               )}
             </>
           ) : (

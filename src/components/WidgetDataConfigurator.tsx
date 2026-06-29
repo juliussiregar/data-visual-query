@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { formatDbTableLabel } from "@/lib/db-table-datasets";
 import { formatDatasetLabel } from "@/lib/table-relations";
+import { DbTableSelect } from "./DbTableSelect";
 import type { TableRelation } from "@/lib/sql-query-types";
 import { cn } from "@/lib/utils";
 import { getWidgetLayoutWidth, isForcedFullWidth, layoutWidthLabel } from "@/lib/widget-layout";
@@ -278,10 +279,9 @@ export const WidgetDataConfigurator = forwardRef<
       {availableTables.length > 1 && (
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-700">Sumber tabel</span>
-          <select
+          <DbTableSelect
             value={widget.sourceTable ?? availableTables[0] ?? ""}
-            onChange={(e) => {
-              const nextTable = e.target.value;
+            onChange={(nextTable) => {
               const nextData = sheetDataForTable(nextTable);
               const allColumnKeys = isTable
                 ? defaultTableDisplayColumns(nextData.columns)
@@ -304,14 +304,14 @@ export const WidgetDataConfigurator = forwardRef<
                 },
               });
             }}
-            className="input-field text-sm"
-          >
-            {availableTables.map((table) => (
-              <option key={table} value={table}>
-                {formatDatasetLabel(table, tableRelations) || formatDbTableLabel(table)}
-              </option>
-            ))}
-          </select>
+            tables={availableTables}
+            formatLabel={(table) =>
+              formatDatasetLabel(table, tableRelations) || formatDbTableLabel(table)
+            }
+            size="md"
+            className="w-full"
+            ariaLabel="Sumber tabel widget"
+          />
         </label>
       )}
 

@@ -8,6 +8,8 @@ import {
   databaseTypeLabel,
   defaultPortForType,
   defaultSchemaForType,
+  isMysqlFamily,
+  SQL_DATABASE_TYPES,
 } from "@/lib/connectors/sql-types";
 import { cn } from "@/lib/utils";
 
@@ -78,9 +80,8 @@ export function DatabaseConnectionQuickForm({
   };
 
   const buildDraft = (): DatabaseConnectionProfile => {
-    const schema =
-      form.dbType === "mysql"
-        ? defaultSchemaForType("mysql", form.database.trim())
+    const schema = isMysqlFamily(form.dbType)
+        ? defaultSchemaForType(form.dbType, form.database.trim())
         : form.schema.trim() || "public";
 
     return {
@@ -157,11 +158,11 @@ export function DatabaseConnectionQuickForm({
       <p className="mt-0.5 text-[11px] text-slate-500">
         {isEditing
           ? "Ubah detail lalu tes koneksi. Password boleh dikosongkan jika tidak diubah."
-          : "Pilih PostgreSQL atau MySQL, isi detail lalu tes koneksi."}
+          : "Pilih PostgreSQL, MySQL, atau MariaDB, isi detail lalu tes koneksi."}
       </p>
 
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        {(["postgresql", "mysql"] as const).map((type) => (
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        {SQL_DATABASE_TYPES.map((type) => (
           <button
             key={type}
             type="button"
@@ -201,7 +202,7 @@ export function DatabaseConnectionQuickForm({
           label="Database"
           value={form.database}
           onChange={(v) => setForm((f) => ({ ...f, database: v }))}
-          placeholder={form.dbType === "mysql" ? "analytics" : "iot_analytics"}
+          placeholder={isMysqlFamily(form.dbType) ? "analytics" : "iot_analytics"}
         />
         <QuickField
           label="Username"
