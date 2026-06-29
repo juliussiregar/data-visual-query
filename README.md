@@ -215,6 +215,35 @@ MariaDB memakai protokol yang sama dengan MySQL. Di **Sources** atau wizard proj
 
 Driver internal tetap `mysql2` — load tabel, join, dan widget berperilaku sama seperti MySQL.
 
+### MariaDB ERP (Frappe) — server produksi sama
+
+SheetVision jalan di container; tes koneksi dari **server app**, bukan dari browser laptop.
+
+| Lingkungan | Host | Port |
+|------------|------|------|
+| Dev (laptop + SSH tunnel) | `127.0.0.1` | `3307` |
+| Prod (compose SheetVision + Frappe di server yang sama) | `host.docker.internal` | `3307` |
+
+Di server ERP, publish MariaDB Frappe ke host (sekali):
+
+```yaml
+# frappe docker-compose — service mariadb
+ports:
+  - "127.0.0.1:3307:3306"
+```
+
+`docker-compose.yml` SheetVision sudah menyertakan `extra_hosts: host.docker.internal` pada service `app`. Setelah `docker compose up -d --build`, tes dari container:
+
+```bash
+docker exec -it sheetvision-app nc -zv host.docker.internal 3307
+```
+
+**Sudah deploy sebelumnya?** Sebelum `git pull` + rebuild, cek prefix volume di server (`docker volume ls`). Set `COMPOSE_PROJECT_NAME` di `.env` sama dengan deploy pertama — lihat [docs/FRAPPE_ERP_ONBOARDING.md](docs/FRAPPE_ERP_ONBOARDING.md#g-deploy-yang-sudah-berjalan).
+
+User database: akun **SELECT-only** (mis. `sheetvision_reader`) pada database site ERP (`_xxxxxxxx`).
+
+Checklist lengkap untuk tim deploy (multi-server, multi-site): **[docs/FRAPPE_ERP_ONBOARDING.md](docs/FRAPPE_ERP_ONBOARDING.md)**.
+
 ## Perintah berguna
 
 **Dev lokal** (butuh Node.js):
