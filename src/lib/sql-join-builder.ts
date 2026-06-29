@@ -1,4 +1,5 @@
 import type { DatabaseType } from "@/lib/types";
+import { isMysqlFamily } from "@/lib/connectors/sql-types";
 import type { SqlJoinQuerySpec } from "@/lib/sql-query-types";
 
 export interface ParsedTableRef {
@@ -6,16 +7,31 @@ export interface ParsedTableRef {
   name: string;
 }
 
+/** Letters, digits, underscore, space (Frappe/ERPNext e.g. `tabSales Invoice`). */
+export function isSafeSqlIdentifier(name: string): boolean {
+  if (!name || name.length > 128) return false;
+  if (/[`'";\0\r\n]/.test(name)) return false;
+  return /^[\w ]+$/.test(name);
+}
+
 export function parseTableRef(tableName: string, defaultSchema: string): ParsedTableRef {
   const trimmed = tableName.trim();
-  if (/^[a-zA-Z0-9_]+$/.test(trimmed)) {
-    return { schema: defaultSchema, name: trimmed };
+  if (!trimmed) throw new Error(`Nama tabel tidak valid: ${tableName}`);
+
+  const dotIndex = trimmed.indexOf(".");
+  if (dotIndex > 0) {
+    const schema = trimmed.slice(0, dotIndex).trim();
+    const name = trimmed.slice(dotIndex + 1).trim();
+    if (!isSafeSqlIdentifier(schema) || !isSafeSqlIdentifier(name)) {
+      throw new Error(`Nama tabel tidak valid: ${tableName}`);
+    }
+    return { schema, name };
   }
-  const parts = trimmed.split(".");
-  if (parts.length === 2 && parts.every((p) => /^[a-zA-Z0-9_]+$/.test(p))) {
-    return { schema: parts[0], name: parts[1] };
+
+  if (!isSafeSqlIdentifier(trimmed)) {
+    throw new Error(`Nama tabel tidak valid: ${tableName}`);
   }
-  throw new Error(`Nama tabel tidak valid: ${tableName}`);
+  return { schema: defaultSchema, name: trimmed };
 }
 
 export function tableShortName(fullTable: string): string {
@@ -28,12 +44,12 @@ export function qualifiedColumnAlias(tableName: string, column: string): string 
 }
 
 function quoteIdentifier(dialect: DatabaseType, name: string): string {
-  if (dialect === "mysql") return `\`${name}\``;
+  if (isMysqlFamily(dialect)) return `\`${name.replace(/`/g, "``")}\``;
   return `"${name.replace(/"/g, '""')}"`;
 }
 
 function quoteTable(dialect: DatabaseType, ref: ParsedTableRef): string {
-  if (dialect === "mysql") {
+  if (isMysqlFamily(dialect)) {
     return `${quoteIdentifier(dialect, ref.schema)}.${quoteIdentifier(dialect, ref.name)}`;
   }
   return `${quoteIdentifier(dialect, ref.schema)}.${quoteIdentifier(dialect, ref.name)}`;
@@ -89,9 +105,8 @@ export function buildJoinSelectSql(
     );
   });
 
-  const limitClause =
-    dialect === "mysql" ? "LIMIT ?" : `LIMIT $${1}`;
-  const params = dialect === "mysql" ? [maxRows] : [maxRows];
+  const limitClause = isMysqlFamily(dialect) ? "LIMIT ?" : `LIMIT $${1}`;
+  const params = isMysqlFamily(dialect) ? [maxRows] : [maxRows];
 
   const sql = [
     `SELECT ${selectParts.join(", ")}`,

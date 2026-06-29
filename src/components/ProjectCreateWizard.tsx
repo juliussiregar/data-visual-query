@@ -286,7 +286,7 @@ export function ProjectCreateWizard({ onCreated, onCancel, compact }: ProjectCre
           )}
         >
           <Database className="h-3.5 w-3.5" />
-          PostgreSQL / MySQL
+          PostgreSQL / MySQL / MariaDB
         </button>
       </div>
 

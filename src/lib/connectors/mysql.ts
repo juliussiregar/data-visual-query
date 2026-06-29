@@ -94,7 +94,7 @@ export async function listMysqlTables(config: SqlConnectionConfig): Promise<SqlT
        FROM information_schema.tables
        WHERE table_schema = ? AND table_type = 'BASE TABLE'
        ORDER BY table_name
-       LIMIT 200`,
+       LIMIT 500`,
       [schema]
     );
     return (rows as MysqlRow[]).map((r) => {
@@ -208,14 +208,11 @@ export async function loadMysqlTable(
   });
 }
 
+function quoteMysqlIdent(name: string): string {
+  return `\`${name.replace(/`/g, "``")}\``;
+}
+
 function sanitizeMysqlTableName(tableName: string, defaultSchema: string): string {
-  const trimmed = tableName.trim();
-  if (/^[a-zA-Z0-9_]+$/.test(trimmed)) {
-    return `\`${defaultSchema}\`.\`${trimmed}\``;
-  }
-  const parts = trimmed.split(".");
-  if (parts.length === 2 && parts.every((p) => /^[a-zA-Z0-9_]+$/.test(p))) {
-    return `\`${parts[0]}\`.\`${parts[1]}\``;
-  }
-  throw new Error("Nama tabel tidak valid");
+  const ref = parseTableRef(tableName, defaultSchema);
+  return `${quoteMysqlIdent(ref.schema)}.${quoteMysqlIdent(ref.name)}`;
 }

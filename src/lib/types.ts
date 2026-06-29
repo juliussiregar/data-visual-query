@@ -56,7 +56,7 @@ export interface DataQualityReport {
 
 export interface DatasetMeta {
   name: string;
-  sourceType: "google_sheets" | "merged" | "postgresql" | "mysql" | "unknown";
+  sourceType: "google_sheets" | "merged" | "postgresql" | "mysql" | "mariadb" | "unknown";
   sourceUrl: string;
   schemaId: DatasetSchemaId;
   fetchedAt: string;
@@ -442,7 +442,7 @@ export interface DataScope {
   values: string[];
 }
 
-export type DatabaseType = "postgresql" | "mysql";
+export type DatabaseType = "postgresql" | "mysql" | "mariadb";
 
 export interface DatabaseConnectionProfile {
   id: string;

@@ -5,6 +5,12 @@ import type { DatabaseConnectionProfile } from "@/lib/types";
 import { databaseTypeLabel } from "@/lib/connectors/sql-types";
 import { cn } from "@/lib/utils";
 
+function connectionTypeBadgeClass(type: DatabaseConnectionProfile["type"]): string {
+  if (type === "mysql") return "bg-amber-100 text-amber-800";
+  if (type === "mariadb") return "bg-rose-100 text-rose-800";
+  return "bg-sky-100 text-sky-800";
+}
+
 interface DatabaseConnectionCardProps {
   connection: DatabaseConnectionProfile;
   selected: boolean;
@@ -48,9 +54,7 @@ export function DatabaseConnectionCard({
             <span
               className={cn(
                 "rounded-md px-1.5 py-0.5 text-[10px] font-medium",
-                connection.type === "mysql"
-                  ? "bg-amber-100 text-amber-800"
-                  : "bg-sky-100 text-sky-800"
+                connectionTypeBadgeClass(connection.type)
               )}
             >
               {databaseTypeLabel(connection.type)}

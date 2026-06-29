@@ -5,6 +5,7 @@ import { Database, Hash, Layers, Type } from "lucide-react";
 import { columnDisplayLabel, numericColumns } from "@/lib/derived-fields";
 import { columnKeysInVisualSql } from "@/lib/visual-sql";
 import type { ColumnMeta } from "@/lib/types";
+import { DbTableSelect } from "./DbTableSelect";
 import { cn } from "@/lib/utils";
 
 export interface QuerySchemaTable {
@@ -95,6 +96,12 @@ export function QuerySchemaSidebar({
 
   const measures = useMemo(() => numericColumns(columns), [columns]);
 
+  const tableKeys = useMemo(() => tables.map((t) => t.key), [tables]);
+  const tableLabels = useMemo(
+    () => Object.fromEntries(tables.map((t) => [t.key, t.label])),
+    [tables]
+  );
+
   const toggle = (key: string) => {
     onToggleColumn(key, !selectedKeys.has(key));
   };
@@ -114,37 +121,21 @@ export function QuerySchemaSidebar({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2.5 space-y-3">
-        {tables.length > 0 && (
+        {tables.length > 1 && onSelectTable && (
           <section>
             <div className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
               <Database className="h-3 w-3" />
               Tabel
             </div>
-            <div className="space-y-1">
-              {tables.map((table) => {
-                const active = activeTable === table.key || (!activeTable && tables.length === 1);
-                return (
-                  <button
-                    key={table.key}
-                    type="button"
-                    disabled={!onSelectTable || tables.length <= 1}
-                    onClick={() => onSelectTable?.(table.key)}
-                    className={cn(
-                      "w-full rounded-lg border px-2 py-1.5 text-left text-[10px] transition-colors",
-                      active
-                        ? "border-indigo-300 bg-indigo-50 font-medium text-indigo-900"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-indigo-200",
-                      tables.length <= 1 && "cursor-default"
-                    )}
-                  >
-                    <span className="block truncate">{table.label}</span>
-                    {table.columnCount != null && (
-                      <span className="text-[9px] text-slate-400">{table.columnCount} kolom</span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+            <DbTableSelect
+              value={activeTable ?? tables[0]?.key ?? ""}
+              onChange={onSelectTable}
+              tables={tableKeys}
+              formatLabel={(key) => tableLabels[key] ?? key}
+              size="sm"
+              className="w-full"
+              ariaLabel="Pilih tabel explore"
+            />
           </section>
         )}
 

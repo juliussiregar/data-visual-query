@@ -370,7 +370,7 @@ export function ProjectSettingsDialogContent({
             <p className="mt-1 text-amber-800">
               Form menampilkan{" "}
               <span className="font-medium">
-                {sourceType === "sheet" ? "Google Sheet" : "PostgreSQL / MySQL"}
+                {sourceType === "sheet" ? "Google Sheet" : "PostgreSQL / MySQL / MariaDB"}
               </span>{" "}
               — belum disimpan. Klik <span className="font-medium">Simpan perubahan</span> untuk
               menerapkan.
@@ -416,7 +416,7 @@ export function ProjectSettingsDialogContent({
               )}
             >
               <Database className="h-4 w-4" />
-              PostgreSQL / MySQL
+              PostgreSQL / MySQL / MariaDB
             </button>
           </div>
 
@@ -612,7 +612,7 @@ export function ProjectSettingsDialogContent({
           onClose={() => setPendingSourceSwitch(null)}
           onConfirm={applySourceTypeSwitch}
           title="Ganti jenis sumber data?"
-          description={`Project akan beralih dari ${sourceType === "sheet" ? "Google Sheet" : "database"} ke ${pendingSourceSwitch === "sheet" ? "Google Sheet" : "PostgreSQL / MySQL"}. Perubahan baru berlaku setelah Anda klik Simpan perubahan.`}
+          description={`Project akan beralih dari ${sourceType === "sheet" ? "Google Sheet" : "database"} ke ${pendingSourceSwitch === "sheet" ? "Google Sheet" : "PostgreSQL / MySQL / MariaDB"}. Perubahan baru berlaku setelah Anda klik Simpan perubahan.`}
           confirmLabel="Ya, ganti"
           variant="default"
         />

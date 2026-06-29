@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Loader2, Search, X } from "lucide-react";
 import { formatDbTableLabel } from "@/lib/data-source-labels";
+import { filterDbTableNames } from "@/lib/db-table-filter";
 import { cn } from "@/lib/utils";
 
 export interface DbTableOption {
@@ -19,10 +20,6 @@ interface DbTableMultiSelectProps {
   compact?: boolean;
 }
 
-function normalizeSearch(value: string): string {
-  return value.trim().toLowerCase();
-}
-
 export function DbTableMultiSelect({
   tables,
   selected,
@@ -32,14 +29,18 @@ export function DbTableMultiSelect({
 }: DbTableMultiSelectProps) {
   const [query, setQuery] = useState("");
 
-  const filteredTables = useMemo(() => {
-    const q = normalizeSearch(query);
-    if (!q) return tables;
-    return tables.filter((table) => {
-      const label = formatDbTableLabel(table.fullName).toLowerCase();
-      return label.includes(q) || table.name.toLowerCase().includes(q);
-    });
-  }, [tables, query]);
+  const filteredTables = useMemo(
+    () =>
+      filterDbTableNames(
+        tables.map((t) => t.name),
+        query,
+        (name) => {
+          const table = tables.find((t) => t.name === name);
+          return table ? formatDbTableLabel(table.fullName) : name;
+        }
+      ).map((name) => tables.find((t) => t.name === name)!),
+    [tables, query]
+  );
 
   const selectedSet = useMemo(() => new Set(selected), [selected]);
 

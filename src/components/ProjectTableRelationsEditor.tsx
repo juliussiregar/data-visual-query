@@ -12,6 +12,7 @@ import {
   formatDatasetLabel,
 } from "@/lib/table-relations";
 import { connectionToApiPayload } from "@/lib/datasource-storage";
+import { DbTableSelect } from "./DbTableSelect";
 import { cn } from "@/lib/utils";
 
 interface ProjectTableRelationsEditorProps {
@@ -142,10 +143,9 @@ function RelationCard({
       <div className="grid gap-2 sm:grid-cols-2">
         <label className="block">
           <span className="mb-1 block text-[11px] font-medium text-slate-600">Tabel dasar</span>
-          <select
+          <DbTableSelect
             value={relation.baseTable}
-            onChange={(e) => {
-              const baseTable = e.target.value;
+            onChange={(baseTable) => {
               const joinTable = join?.table ?? "";
               onUpdate({
                 ...relation,
@@ -158,32 +158,26 @@ function RelationCard({
               });
               setSuggestionHint(null);
             }}
-            className="input-field text-xs"
-          >
-            <option value="">Pilih…</option>
-            {dbTables.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
+            tables={dbTables}
+            formatLabel={(table) => formatDatasetLabel(table) || table}
+            size="md"
+            className="w-full"
+            placeholder="Pilih…"
+            ariaLabel="Tabel dasar join"
+          />
         </label>
         <label className="block">
           <span className="mb-1 block text-[11px] font-medium text-slate-600">Tabel join</span>
-          <select
+          <DbTableSelect
             value={join?.table ?? ""}
-            onChange={(e) => patchJoin({ table: e.target.value }, true)}
-            className="input-field text-xs"
-          >
-            <option value="">Pilih…</option>
-            {dbTables
-              .filter((t) => t !== relation.baseTable)
-              .map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-          </select>
+            onChange={(table) => patchJoin({ table }, true)}
+            tables={dbTables.filter((t) => t !== relation.baseTable)}
+            formatLabel={(table) => formatDatasetLabel(table) || table}
+            size="md"
+            className="w-full"
+            placeholder="Pilih…"
+            ariaLabel="Tabel join"
+          />
         </label>
       </div>
 

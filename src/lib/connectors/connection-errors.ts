@@ -1,4 +1,5 @@
 import type { DatabaseType } from "@/lib/types";
+import { databaseTypeLabel } from "@/lib/connectors/sql-types";
 
 export interface DbConnectionErrorContext {
   type?: DatabaseType;
@@ -16,9 +17,8 @@ type ErrnoError = Error & {
 };
 
 function dbLabel(type?: DatabaseType): string {
-  if (type === "mysql") return "MySQL";
-  if (type === "postgresql") return "PostgreSQL";
-  return "database";
+  if (!type) return "database";
+  return databaseTypeLabel(type);
 }
 
 function targetLabel(ctx?: DbConnectionErrorContext): string {

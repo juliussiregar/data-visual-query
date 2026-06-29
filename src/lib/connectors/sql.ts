@@ -2,6 +2,7 @@ import type { SqlConnectionConfig, SqlTableInfo } from "@/lib/connectors/sql-typ
 import {
   databaseTypeLabel,
   datasetSourceType,
+  isMysqlFamily,
   normalizeDatabaseType,
   sqlSourceLabel,
 } from "@/lib/connectors/sql-types";
@@ -27,7 +28,7 @@ export async function resolveSqlConfig(
   }
 
   const type = normalizeDatabaseType(b.type);
-  if (type === "mysql") {
+  if (isMysqlFamily(type)) {
     return { type, ...parseMysqlBody(body) };
   }
   return { type: "postgresql", ...parsePostgresBody(body) };
@@ -36,12 +37,12 @@ export async function resolveSqlConfig(
 export async function testSqlConnection(
   config: SqlConnectionConfig
 ): Promise<{ ok: true; serverVersion: string; database: string }> {
-  if (config.type === "mysql") return testMysqlConnection(config);
+  if (isMysqlFamily(config.type)) return testMysqlConnection(config);
   return testPostgresConnection(config);
 }
 
 export async function listSqlTables(config: SqlConnectionConfig): Promise<SqlTableInfo[]> {
-  if (config.type === "mysql") return listMysqlTables(config);
+  if (isMysqlFamily(config.type)) return listMysqlTables(config);
   return listPostgresTables(config);
 }
 
@@ -50,7 +51,7 @@ export async function previewSqlTable(
   tableName: string,
   limit = 5
 ): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
-  if (config.type === "mysql") return previewMysqlTable(config, tableName, limit);
+  if (isMysqlFamily(config.type)) return previewMysqlTable(config, tableName, limit);
   return previewPostgresTable(config, tableName, limit);
 }
 
@@ -59,7 +60,7 @@ export async function loadSqlTable(
   tableName: string,
   maxRows = 500
 ): Promise<Record<string, string>[]> {
-  if (config.type === "mysql") return loadMysqlTable(config, tableName, maxRows);
+  if (isMysqlFamily(config.type)) return loadMysqlTable(config, tableName, maxRows);
   return loadPostgresTable(config, tableName, maxRows);
 }
 
@@ -68,6 +69,6 @@ export async function listSqlForeignKeysBetween(
   tableA: string,
   tableB: string
 ): Promise<ForeignKeyEdge[]> {
-  if (config.type === "mysql") return listMysqlForeignKeysBetween(config, tableA, tableB);
+  if (isMysqlFamily(config.type)) return listMysqlForeignKeysBetween(config, tableA, tableB);
   return listPostgresForeignKeysBetween(config, tableA, tableB);
 }

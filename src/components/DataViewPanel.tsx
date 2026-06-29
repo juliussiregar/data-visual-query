@@ -8,6 +8,8 @@ import { DataQualityPanel } from "./DataQualityPanel";
 import { MetricsLibraryPanel } from "./MetricsLibraryPanel";
 import { ColumnInsights } from "./ColumnInsights";
 import { InsightsPanel } from "./InsightsPanel";
+import { DbTableSelect } from "./DbTableSelect";
+import { formatDbTableLabel } from "@/lib/data-source-labels";
 import { cn } from "@/lib/utils";
 import { Table2, Columns3, Lightbulb } from "lucide-react";
 
@@ -58,17 +60,16 @@ export function DataViewPanel({
             {availableTables.length > 1 && selectedTable ? ` · ${selectedTable}` : ""}
           </p>
           {availableTables.length > 1 && onSelectTable && (
-            <select
-              value={selectedTable ?? availableTables[0]}
-              onChange={(e) => onSelectTable(e.target.value)}
-              className="mt-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700"
-            >
-              {availableTables.map((table) => (
-                <option key={table} value={table}>
-                  {table}
-                </option>
-              ))}
-            </select>
+            <div className="mt-2 max-w-md">
+              <DbTableSelect
+                value={selectedTable ?? availableTables[0]}
+                onChange={onSelectTable}
+                tables={availableTables}
+                formatLabel={formatDbTableLabel}
+                size="sm"
+                ariaLabel="Pilih tabel data"
+              />
+            </div>
           )}
         </div>
       </div>

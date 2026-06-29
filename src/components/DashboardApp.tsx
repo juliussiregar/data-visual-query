@@ -83,6 +83,8 @@ import {
 } from "@/lib/report-schedule";
 import { fetchDbConnections, connectionToApiPayload } from "@/lib/datasource-storage";
 import { formatDatasetLabel, isRelationExecutable } from "@/lib/table-relations";
+import { formatDbTableLabel } from "@/lib/data-source-labels";
+import { DbTableSelect } from "./DbTableSelect";
 import { resolveProjectDbTables } from "@/lib/db-table-datasets";
 import type { Project } from "@/lib/project-types";
 import {
@@ -1468,41 +1470,45 @@ export function DashboardApp() {
                 onDeleted={handleProjectDeleted}
               />
               {inDataDashboard && (
-                <p className="hidden truncate text-[11px] text-slate-500 md:block">
+                <div className="hidden text-[11px] text-slate-500 md:flex md:items-center md:gap-1">
                   {activeDbTables.length > 1 ? (
                     <>
-                      <span title="Mengganti tabel yang ditampilkan di tab Data, Charts, dan Insights">
+                      <span
+                        className="shrink-0"
+                        title="Mengganti tabel yang ditampilkan di tab Data, Charts, dan Insights"
+                      >
                         Tabel aktif:
-                      </span>{" "}
-                      <select
+                      </span>
+                      <DbTableSelect
                         value={selectedDataTable}
-                        onChange={(e) => {
-                          setSelectedDataTable(e.target.value);
+                        onChange={(table) => {
+                          setSelectedDataTable(table);
                           if (activeView === "overview") {
                             setActiveView("data");
                           }
                         }}
-                        className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-600"
-                        aria-label="Pilih tabel untuk tab Data"
-                      >
-                        {activeDbTables.map((table) => (
-                          <option key={table} value={table}>
-                            {formatDatasetLabel(table, activeProject?.tableRelations)}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="text-slate-400">
-                        {" "}
+                        tables={activeDbTables}
+                        formatLabel={formatDbTableLabel}
+                        size="xs"
+                        ariaLabel="Pilih tabel untuk tab Data"
+                      />
+                      <span className="shrink-0 text-slate-400">
                         · {displayData?.rows.length.toLocaleString("id-ID")} baris
+                        {displayData?.columns.length
+                          ? ` · ${displayData.columns.length.toLocaleString("id-ID")} kolom`
+                          : ""}
                       </span>
                     </>
                   ) : (
                     <>
                       {displayData?.rows.length.toLocaleString("id-ID")} baris
+                      {displayData?.columns.length
+                        ? ` · ${displayData.columns.length.toLocaleString("id-ID")} kolom`
+                        : ""}
                       {sheetData?.dataset?.name ? ` · ${sheetData.dataset.name}` : ""}
                     </>
                   )}
-                </p>
+                </div>
               )}
             </div>
 

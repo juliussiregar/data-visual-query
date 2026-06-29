@@ -341,6 +341,7 @@ textarea:disabled,
 .layer-modal { z-index: 99990; isolation: isolate; }
 .layer-modal-panel { position: relative; z-index: 99991; }
 .layer-dropdown { z-index: 99980; }
+.layer-table-picker { z-index: 99985; }
 .layer-chat { z-index: 9000; }
 .layer-header { z-index: 100; }
 

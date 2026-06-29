@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveSqlConfig, listSqlTables } from "@/lib/connectors/sql";
+import { isMysqlFamily } from "@/lib/connectors/sql-types";
 import { AuthError, requireSessionUser } from "@/lib/session-server";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +14,7 @@ export async function POST(request: NextRequest) {
     const tables = await listSqlTables(config);
     return NextResponse.json({
       tables,
-      schema: config.schema ?? (config.type === "mysql" ? config.database : "public"),
+      schema: config.schema ?? (isMysqlFamily(config.type) ? config.database : "public"),
     });
   } catch (error) {
     if (error instanceof AuthError) {

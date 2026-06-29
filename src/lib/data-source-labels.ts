@@ -47,7 +47,8 @@ export const formatPostgresTableLabel = formatDbTableLabel;
 
 export function databaseKindLabel(url: string): string {
   const lower = url.trim().toLowerCase();
-  if (lower.startsWith("mysql://") || lower.startsWith("mariadb://")) return "MySQL";
+  if (lower.startsWith("mariadb://")) return "MariaDB";
+  if (lower.startsWith("mysql://")) return "MySQL";
   if (lower.startsWith("mssql://") || lower.startsWith("sqlserver://")) return "SQL Server";
   if (lower.startsWith("postgres://") || lower.startsWith("postgresql://")) {
     return "PostgreSQL";

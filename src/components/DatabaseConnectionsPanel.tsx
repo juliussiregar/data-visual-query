@@ -30,8 +30,11 @@ import {
   databaseTypeLabel,
   defaultPortForType,
   defaultSchemaForType,
+  isMysqlFamily,
+  SQL_DATABASE_TYPES,
 } from "@/lib/connectors/sql-types";
 import { cn } from "@/lib/utils";
+import { DbTableSelect } from "./DbTableSelect";
 
 interface DatabaseConnectionsPanelProps {
   onLoadToDashboard?: (data: SheetData) => void;
@@ -86,9 +89,8 @@ export function DatabaseConnectionsPanel({
   }, [refreshConnections]);
 
   const buildDraftProfile = useCallback((): DatabaseConnectionProfile => {
-    const schema =
-      form.dbType === "mysql"
-        ? defaultSchemaForType("mysql", form.database.trim())
+    const schema = isMysqlFamily(form.dbType)
+        ? defaultSchemaForType(form.dbType, form.database.trim())
         : form.schema.trim() || "public";
     return {
       id: crypto.randomUUID(),
@@ -233,7 +235,7 @@ export function DatabaseConnectionsPanel({
             Koneksi Database
           </h3>
           <p className="mt-1 max-w-xl text-xs leading-relaxed text-slate-500">
-            Hubungkan PostgreSQL atau MySQL read-only. Kredensial disimpan terenkripsi di database
+            Hubungkan PostgreSQL, MySQL, atau MariaDB read-only. Kredensial disimpan terenkripsi di database
             akun Anda.
           </p>
         </div>
@@ -289,8 +291,8 @@ export function DatabaseConnectionsPanel({
             <p className="text-[11px] text-slate-500">
               Pilih tipe database, isi detail koneksi lalu klik <strong>Tes koneksi</strong>.
             </p>
-            <div className="mt-3 grid max-w-xs grid-cols-2 gap-2">
-              {(["postgresql", "mysql"] as const).map((type) => (
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {SQL_DATABASE_TYPES.map((type) => (
                 <button
                   key={type}
                   type="button"
@@ -332,7 +334,11 @@ export function DatabaseConnectionsPanel({
             />
             <Field
               label="Port"
-              hint={form.dbType === "mysql" ? "Default MySQL: 3306" : "Default PostgreSQL: 5432"}
+              hint={
+                isMysqlFamily(form.dbType)
+                  ? "Default MySQL / MariaDB: 3306"
+                  : "Default PostgreSQL: 5432"
+              }
               value={form.port}
               onChange={(v) => setForm((f) => ({ ...f, port: v }))}
               placeholder={String(defaultPortForType(form.dbType))}
@@ -427,20 +433,20 @@ export function DatabaseConnectionsPanel({
               <p className="mb-2 text-xs font-medium text-slate-700">
                 Pilih tabel ({tables.length} ditemukan di schema {form.schema})
               </p>
-              <select
+              <DbTableSelect
                 value={selectedTable}
-                onChange={(e) => {
-                  setSelectedTable(e.target.value);
+                onChange={(table) => {
+                  setSelectedTable(table);
                   setPreview(null);
                 }}
-                className="w-full max-w-md rounded-lg border border-slate-200 px-3 py-2 text-xs"
-              >
-                {tables.map((t) => (
-                  <option key={t.fullName} value={t.name}>
-                    {t.fullName}
-                  </option>
-                ))}
-              </select>
+                options={tables.map((t) => ({
+                  value: t.name,
+                  label: t.fullName,
+                }))}
+                size="sm"
+                className="w-full max-w-md"
+                ariaLabel="Pilih tabel database"
+              />
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -505,7 +511,7 @@ export function DatabaseConnectionsPanel({
           <Database className="mx-auto h-8 w-8 text-slate-300" />
           <p className="mt-2 text-sm text-slate-600">Belum ada koneksi database</p>
           <p className="mt-1 text-xs text-slate-400">
-            Klik &quot;Koneksi Baru&quot; untuk menghubungkan PostgreSQL atau MySQL
+            Klik &quot;Koneksi Baru&quot; untuk menghubungkan PostgreSQL, MySQL, atau MariaDB
           </p>
         </div>
       )}
@@ -684,17 +690,17 @@ function SavedConnectionCard({
           )}
           {tables.length > 0 && (
             <>
-              <select
+              <DbTableSelect
                 value={selectedTable}
-                onChange={(e) => onTableChange(e.target.value)}
-                className="w-full max-w-md rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"
-              >
-                {tables.map((t) => (
-                  <option key={t.fullName} value={t.name}>
-                    {t.fullName}
-                  </option>
-                ))}
-              </select>
+                onChange={onTableChange}
+                options={tables.map((t) => ({
+                  value: t.name,
+                  label: t.fullName,
+                }))}
+                size="sm"
+                className="w-full max-w-md"
+                ariaLabel="Pilih tabel koneksi"
+              />
               <div className="mt-2 flex flex-wrap gap-2">
                 <button type="button" onClick={onPreview} className="btn-ghost text-xs">
                   <Eye className="h-3 w-3" />
