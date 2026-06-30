@@ -83,9 +83,8 @@ import {
 } from "@/lib/report-schedule";
 import { fetchDbConnections, connectionToApiPayload } from "@/lib/datasource-storage";
 import { formatDatasetLabel, isRelationExecutable } from "@/lib/table-relations";
-import { formatDbTableLabel } from "@/lib/data-source-labels";
 import { DbTableSelect } from "./DbTableSelect";
-import { resolveProjectDbTables } from "@/lib/db-table-datasets";
+import { resolveProjectDbTables, resolveLoadedDbTableList, formatDbTableLabel } from "@/lib/db-table-datasets";
 import type { Project } from "@/lib/project-types";
 import {
   fetchProjects,
@@ -461,6 +460,11 @@ export function DashboardApp() {
     const loaded = await res.json();
     if (!res.ok) throw new Error(loaded.error || "Gagal memuat tabel");
 
+    if (!loaded.tables?.length && tables.length > 0) {
+      loaded.tables = tables;
+      loaded.primaryTable = tables[0];
+    }
+
     const relations = (project.tableRelations ?? []).filter(isRelationExecutable);
     if (relations.length > 0) {
       const joinRes = await fetch("/api/datasource/load-joins", {
@@ -504,13 +508,12 @@ export function DashboardApp() {
       const preferredTable = options?.preferredTable?.trim() || null;
       setLoading(true);
       setError(null);
-      const tableList =
-        data.tables ??
-        (data.primaryTable ? [data.primaryTable] : []);
-      const datasets = data.datasets ?? null;
       const urls =
         data.sheetUrls ??
         (data.dataset?.sourceUrl ? [data.dataset.sourceUrl] : ["postgresql://loaded"]);
+      const projectTables = resolveProjectDbTables(activeProjectRef.current ?? {});
+      const tableList = resolveLoadedDbTableList(data, projectTables);
+      const datasets = data.datasets ?? null;
       setLastUrl(urls[0]);
       setSheetUrls(urls);
       setDbDatasets(datasets);
@@ -1410,6 +1413,21 @@ export function DashboardApp() {
   };
 
   const inDataDashboard = Boolean(sheetData && viewData);
+  const isDatabaseProject = Boolean(
+    activeProject && projectSourceType(activeProject) === "database"
+  );
+  const currentDataTable = selectedDataTable || activeDbTables[0] || "";
+  const currentTableLabel = currentDataTable ? formatDbTableLabel(currentDataTable) : "";
+  const headerRowColSummary = displayData
+    ? `${displayData.rows.length.toLocaleString("id-ID")} baris${
+        displayData.columns.length
+          ? ` · ${displayData.columns.length.toLocaleString("id-ID")} kolom`
+          : ""
+      }`
+    : "";
+  const headerConnectionLabel = sheetData?.dataset?.name?.includes(" · ")
+    ? sheetData.dataset.name.split(" · ").slice(1).join(" · ")
+    : sheetData?.dataset?.name ?? "";
   const showFiltersBar =
     inDataDashboard &&
     ["overview", "charts", "data", "query"].includes(activeView) &&
@@ -1470,14 +1488,14 @@ export function DashboardApp() {
                 onDeleted={handleProjectDeleted}
               />
               {inDataDashboard && (
-                <div className="hidden text-[11px] text-slate-500 md:flex md:items-center md:gap-1">
-                  {activeDbTables.length > 1 ? (
+                <div className="hidden min-w-0 text-[11px] text-slate-500 md:flex md:items-center md:gap-1">
+                  {isDatabaseProject && activeDbTables.length > 1 ? (
                     <>
                       <span
                         className="shrink-0"
                         title="Mengganti tabel yang ditampilkan di tab Data, Charts, dan Insights"
                       >
-                        Tabel aktif:
+                        Tabel:
                       </span>
                       <DbTableSelect
                         value={selectedDataTable}
@@ -1492,19 +1510,24 @@ export function DashboardApp() {
                         size="xs"
                         ariaLabel="Pilih tabel untuk tab Data"
                       />
-                      <span className="shrink-0 text-slate-400">
-                        · {displayData?.rows.length.toLocaleString("id-ID")} baris
-                        {displayData?.columns.length
-                          ? ` · ${displayData.columns.length.toLocaleString("id-ID")} kolom`
-                          : ""}
+                      <span className="shrink-0 text-slate-400">· {headerRowColSummary}</span>
+                    </>
+                  ) : isDatabaseProject && currentTableLabel ? (
+                    <>
+                      <span
+                        className="max-w-[220px] truncate font-medium text-slate-700"
+                        title={currentDataTable}
+                      >
+                        {currentTableLabel}
                       </span>
+                      <span className="shrink-0 text-slate-400">· {headerRowColSummary}</span>
+                      {headerConnectionLabel ? (
+                        <span className="shrink-0 text-slate-400"> · {headerConnectionLabel}</span>
+                      ) : null}
                     </>
                   ) : (
                     <>
-                      {displayData?.rows.length.toLocaleString("id-ID")} baris
-                      {displayData?.columns.length
-                        ? ` · ${displayData.columns.length.toLocaleString("id-ID")} kolom`
-                        : ""}
+                      {headerRowColSummary}
                       {sheetData?.dataset?.name ? ` · ${sheetData.dataset.name}` : ""}
                     </>
                   )}

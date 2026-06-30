@@ -7,6 +7,7 @@ import {
   databaseTypeLabel,
   datasetSourceType,
 } from "@/lib/connectors/sql";
+import { formatDbTableLabel } from "@/lib/data-source-labels";
 import { appendAuditEvent } from "@/lib/audit-log";
 import { AuthError, requireSessionUser } from "@/lib/session-server";
 
@@ -33,9 +34,11 @@ export async function POST(request: NextRequest) {
     });
 
     const dbLabel = databaseTypeLabel(config.type);
+    const tableLabel = formatDbTableLabel(table);
     if (data.dataset) {
       data.dataset.sourceType = datasetSourceType(config.type);
-      data.dataset.name = `${String(connectionName ?? table)} (${dbLabel})`;
+      const connLabel = connectionName ? String(connectionName) : dbLabel;
+      data.dataset.name = `${tableLabel} · ${connLabel}`;
     }
 
     await appendAuditEvent(
@@ -52,6 +55,8 @@ export async function POST(request: NextRequest) {
       mergeMode: false,
       joinMode: false,
       dbSource: { table, connectionName },
+      primaryTable: table,
+      tables: [table],
     });
   } catch (error) {
     if (error instanceof AuthError) {
