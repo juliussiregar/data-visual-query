@@ -14,7 +14,7 @@ import {
   fetchDbConnections,
   removeDbConnection,
 } from "@/lib/datasource-storage";
-import { fetchConnectionTables } from "@/lib/fetch-connection-tables";
+import { fetchConnectionTables, fetchTablePreview } from "@/lib/fetch-connection-tables";
 import { createProject } from "@/lib/project-storage";
 import type { Project } from "@/lib/project-types";
 import type { ProbeResult, SourceType } from "@/lib/project-source-probe";
@@ -113,6 +113,14 @@ export function ProjectCreateWizard({ onCreated, onCancel, compact }: ProjectCre
       if (!selectedDb) return [];
       const result = await fetchConnectionTables(selectedDb, query);
       return result.tables;
+    },
+    [selectedDb]
+  );
+
+  const previewTable = useCallback(
+    async (tableName: string) => {
+      if (!selectedDb) throw new Error("Koneksi database belum dipilih");
+      return fetchTablePreview(selectedDb, tableName);
     },
     [selectedDb]
   );
@@ -362,6 +370,7 @@ export function ProjectCreateWizard({ onCreated, onCancel, compact }: ProjectCre
               totalCount={tableTotalCount}
               truncated={tablesTruncated}
               onSearchTables={searchTables}
+              onPreviewTable={previewTable}
               onChange={(next) => {
                 setDbTables(next);
                 setTableRelations((prev) =>

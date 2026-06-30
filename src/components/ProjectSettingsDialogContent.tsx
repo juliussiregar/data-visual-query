@@ -14,7 +14,7 @@ import {
 import type { DatabaseConnectionProfile } from "@/lib/types";
 import type { Project } from "@/lib/project-types";
 import { fetchDbConnections, removeDbConnection } from "@/lib/datasource-storage";
-import { fetchConnectionTables } from "@/lib/fetch-connection-tables";
+import { fetchConnectionTables, fetchTablePreview } from "@/lib/fetch-connection-tables";
 import { deleteProject, updateProject } from "@/lib/project-storage";
 import type { ProbeResult, SourceType } from "@/lib/project-source-probe";
 import {
@@ -167,6 +167,14 @@ export function ProjectSettingsDialogContent({
       if (!selectedDb) return [];
       const result = await fetchConnectionTables(selectedDb, query);
       return result.tables;
+    },
+    [selectedDb]
+  );
+
+  const previewTable = useCallback(
+    async (tableName: string) => {
+      if (!selectedDb) throw new Error("Koneksi database belum dipilih");
+      return fetchTablePreview(selectedDb, tableName);
     },
     [selectedDb]
   );
@@ -508,6 +516,7 @@ export function ProjectSettingsDialogContent({
                       totalCount={tableTotalCount}
                       truncated={tablesTruncated}
                       onSearchTables={searchTables}
+                      onPreviewTable={previewTable}
                       onChange={setDbTables}
                     />
                   </div>
