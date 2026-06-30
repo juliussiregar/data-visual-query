@@ -7,7 +7,6 @@ import {
   Loader2,
   CheckCircle2,
   XCircle,
-  Plus,
 } from "lucide-react";
 import type { DatabaseConnectionProfile } from "@/lib/types";
 import {
@@ -20,7 +19,7 @@ import type { Project } from "@/lib/project-types";
 import type { ProbeResult, SourceType } from "@/lib/project-source-probe";
 import { probeDatabaseTable, probeSheetUrl } from "@/lib/project-source-probe";
 import { DatabaseConnectionQuickForm } from "./DatabaseConnectionQuickForm";
-import { DatabaseConnectionCard } from "./DatabaseConnectionCard";
+import { DatabaseConnectionPicker } from "./DatabaseConnectionPicker";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DbTableMultiSelect } from "./DbTableMultiSelect";
 import { ProjectTableRelationsEditor } from "./ProjectTableRelationsEditor";
@@ -330,36 +329,22 @@ export function ProjectCreateWizard({ onCreated, onCancel, compact }: ProjectCre
           }
         />
       ) : (
-        <div className="space-y-2">
-          <div className="flex items-end justify-between gap-2">
-            <span className="text-xs font-medium text-slate-700">Koneksi database</span>
-            <button
-              type="button"
-              onClick={() => {
-                setShowAddConnection(true);
-                setEditingConnection(null);
-              }}
-              className="btn-ghost shrink-0 gap-1 py-2 text-[11px]"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Baru
-            </button>
-          </div>
-          <div className="space-y-2">
-            {dbConnections.map((connection) => (
-              <DatabaseConnectionCard
-                key={connection.id}
-                connection={connection}
-                selected={connection.id === selectedDbId}
-                onSelect={() => setSelectedDbId(connection.id)}
-                onEdit={() => {
-                  setEditingConnection(connection);
-                  setShowAddConnection(false);
-                }}
-                onDelete={() => setPendingDeleteConnection(connection)}
-              />
-            ))}
-          </div>
+        <div className="space-y-3">
+          <DatabaseConnectionPicker
+            connections={dbConnections}
+            selectedId={selectedDbId}
+            onSelect={setSelectedDbId}
+            onAddNew={() => {
+              setShowAddConnection(true);
+              setEditingConnection(null);
+            }}
+            onEdit={(connection) => {
+              setEditingConnection(connection);
+              setShowAddConnection(false);
+            }}
+            onDelete={(connection) => setPendingDeleteConnection(connection)}
+            label="Koneksi database"
+          />
 
           <div className="space-y-2">
             <span className="block text-xs font-medium text-slate-700">Tabel</span>

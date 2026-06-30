@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Search, ChevronLeft, ChevronRight, Download, List } from "lucide-react";
 import type { ColumnMeta } from "@/lib/types";
+import { formatColumnValue } from "@/lib/format";
 import { maskValue } from "@/lib/pii-mask";
 import { cn } from "@/lib/utils";
 
@@ -43,6 +44,12 @@ function isBadgeColumn(key: string): boolean {
   return /status|prioritas|priority/i.test(key);
 }
 
+function formatCellDisplay(raw: string, col: ColumnMeta): string {
+  if (!raw || raw === "—") return raw || "—";
+  if (col.type === "number") return formatColumnValue(col, raw);
+  return raw;
+}
+
 function renderCellValue(
   raw: string,
   col: ColumnMeta,
@@ -50,10 +57,11 @@ function renderCellValue(
   fitContainer: boolean,
   bold = false
 ) {
+  const display = formatCellDisplay(raw, col);
   const val =
-    maskPII && col.sensitive && raw !== "—" && raw !== ""
-      ? maskValue(raw, true)
-      : raw || "—";
+    maskPII && col.sensitive && display !== "—" && display !== ""
+      ? maskValue(display, true)
+      : display;
   const badge = isBadgeColumn(col.key) && val !== "—";
 
   if (badge) {

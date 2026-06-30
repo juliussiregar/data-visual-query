@@ -7,7 +7,6 @@ import {
   Loader2,
   CheckCircle2,
   XCircle,
-  Plus,
   Trash2,
   AlertTriangle,
 } from "lucide-react";
@@ -32,7 +31,7 @@ import { formatDbTableLabel } from "@/lib/db-table-datasets";
 import { ConfirmDialog } from "./ConfirmDialog";
 import type { TableRelation } from "@/lib/sql-query-types";
 import { useToast } from "./ToastProvider";
-import { DatabaseConnectionCard } from "./DatabaseConnectionCard";
+import { DatabaseConnectionPicker } from "./DatabaseConnectionPicker";
 import { cn } from "@/lib/utils";
 
 type ConfirmTarget =
@@ -45,6 +44,7 @@ interface ProjectSettingsDialogContentProps {
   onUpdated: (project: Project) => void | Promise<void>;
   onDeleted?: (projectId: string) => void;
   onLoad: () => void;
+  onOpenSources?: () => void;
   loading?: boolean;
 }
 
@@ -90,6 +90,7 @@ export function ProjectSettingsDialogContent({
   onUpdated,
   onDeleted,
   onLoad,
+  onOpenSources,
   loading,
 }: ProjectSettingsDialogContentProps) {
   const initial = syncStateFromProject(project);
@@ -472,39 +473,23 @@ export function ProjectSettingsDialogContent({
               />
             ) : (
               <div className="space-y-4">
-                <div>
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-medium text-slate-700">Koneksi database</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowAddConnection(true);
-                        setEditingConnection(null);
-                      }}
-                      className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-violet-700 hover:bg-violet-50"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      Baru
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    {dbConnections.map((connection) => (
-                      <DatabaseConnectionCard
-                        key={connection.id}
-                        connection={connection}
-                        selected={connection.id === selectedDbId}
-                        onSelect={() => setSelectedDbId(connection.id)}
-                        onEdit={() => {
-                          setEditingConnection(connection);
-                          setShowAddConnection(false);
-                        }}
-                        onDelete={() =>
-                          setConfirmTarget({ kind: "connection", connection })
-                        }
-                      />
-                    ))}
-                  </div>
-                </div>
+                <DatabaseConnectionPicker
+                  connections={dbConnections}
+                  selectedId={selectedDbId}
+                  onSelect={setSelectedDbId}
+                  onAddNew={() => {
+                    setShowAddConnection(true);
+                    setEditingConnection(null);
+                  }}
+                  onEdit={(connection) => {
+                    setEditingConnection(connection);
+                    setShowAddConnection(false);
+                  }}
+                  onDelete={(connection) =>
+                    setConfirmTarget({ kind: "connection", connection })
+                  }
+                  onOpenSources={onOpenSources}
+                />
 
                 {selectedDb && (
                   <div className="space-y-2 border-t border-slate-200/80 pt-4">
