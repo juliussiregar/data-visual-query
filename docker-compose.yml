@@ -4,12 +4,10 @@
 # Jika server SUDAH deploy: jangan ganti nama project tanpa cek `docker volume ls` dulu.
 #
 # Koneksi MariaDB ERP (server yang sama, app di container):
-#   1. Di compose Frappe, publish MariaDB ke host:
-#        ports: ["127.0.0.1:3307:3306"]
-#   2. Di UI SheetVision (Sources / wizard project), isi:
-#        Host: host.docker.internal   Port: 3307
-#      (BUKAN 127.0.0.1 — dari dalam container, localhost = container sendiri.)
-#   3. Dev laptop + SSH tunnel tetap pakai Host 127.0.0.1 Port 3307.
+#   1. Service app join network Frappe (FRAPPE_DOCKER_NETWORK di .env, default docker_default).
+#   2. Di UI SheetVision: Host mariadb, Port 3306, database site _xxxxxxxx.
+#   3. Tidak perlu publish port MariaDB ke host (127.0.0.1:3307 tidak reach dari container).
+#   4. Dev laptop + SSH tunnel: Host 127.0.0.1 Port 3307.
 #
 # Persiapan:
 #   cp .env.example .env
@@ -133,11 +131,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    # Akses service di host (mis. MariaDB ERP di 127.0.0.1:3307) dari dalam container app.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
       - sheetvision
+      - frappe_erp
 
 volumes:
   db_data:
@@ -145,6 +143,9 @@ volumes:
   mysql_analytics_db_data:
 
 networks:
-  # Jaringan internal SheetVision saja — tidak perlu join network Frappe jika pakai host.docker.internal.
   sheetvision:
     driver: bridge
+  # Network Docker stack Frappe ERP (same server). Cek: docker inspect <mariadb_id> --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}'
+  frappe_erp:
+    external: true
+    name: ${FRAPPE_DOCKER_NETWORK:-docker_default}
