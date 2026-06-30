@@ -17,6 +17,13 @@ export interface SqlTableInfo {
   fullName: string;
 }
 
+/** Batas aman daftar tabel tanpa filter; di atas ini UI pakai pencarian server. */
+export const SQL_TABLE_LIST_CAP = 10_000;
+
+export interface ListSqlTablesOptions {
+  search?: string;
+}
+
 /** Opsi tipe database di form koneksi (urutan tampilan UI). */
 export const SQL_DATABASE_TYPES: DatabaseType[] = ["postgresql", "mysql", "mariadb"];
 

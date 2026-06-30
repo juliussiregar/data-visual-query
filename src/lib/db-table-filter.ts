@@ -48,3 +48,8 @@ export function dbTableOptionsFromNames(
 
 /** Show table search when the list is long enough to need filtering. */
 export const DB_TABLE_SEARCH_MIN = 5;
+
+/** Escape user input for SQL LIKE (MySQL / PostgreSQL). */
+export function escapeSqlLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
