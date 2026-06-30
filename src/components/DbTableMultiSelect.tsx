@@ -325,17 +325,38 @@ export function DbTableMultiSelect({
                   previewActive ? "bg-indigo-50/80" : checked ? "bg-violet-50/80" : "hover:bg-white"
                 )}
               >
-                <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-1 py-1 text-xs">
+                <label className="flex shrink-0 cursor-pointer items-center px-1 py-1">
                   <input
                     type="checkbox"
                     checked={checked}
                     onChange={() => toggle(table.name)}
                     className="rounded border-slate-300 text-violet-600"
+                    aria-label={`Pilih ${label}`}
                   />
-                  <span className={cn("truncate", checked ? "text-violet-900" : "text-slate-700")}>
-                    {label}
-                  </span>
                 </label>
+                {onPreviewTable ? (
+                  <button
+                    type="button"
+                    onClick={() => openPreview(table.name)}
+                    className={cn(
+                      "min-w-0 flex-1 truncate px-1 py-1 text-left text-xs transition-colors",
+                      previewActive
+                        ? "font-medium text-indigo-800"
+                        : checked
+                          ? "text-violet-900 hover:text-indigo-700"
+                          : "text-slate-700 hover:text-indigo-700"
+                    )}
+                    title="Lihat preview tanpa memilih"
+                  >
+                    {label}
+                  </button>
+                ) : (
+                  <label className="flex min-w-0 flex-1 cursor-pointer items-center px-1 py-1 text-xs">
+                    <span className={cn("truncate", checked ? "text-violet-900" : "text-slate-700")}>
+                      {label}
+                    </span>
+                  </label>
+                )}
                 {onPreviewTable ? (
                   <button
                     type="button"
@@ -370,7 +391,7 @@ export function DbTableMultiSelect({
 
       <p className="text-[11px] leading-relaxed text-slate-400">
         {onPreviewTable
-          ? "Klik ikon mata untuk lihat kolom dan contoh data sebelum memilih."
+          ? "Klik nama tabel atau ikon mata untuk lihat kolom dan contoh data sebelum memilih."
           : truncated
             ? "Database punya banyak tabel — gunakan Cari untuk menemukan tabel di luar daftar awal."
             : "Pilih satu atau lebih tabel. Daftar di atas bisa di-scroll jika tabel banyak."}
