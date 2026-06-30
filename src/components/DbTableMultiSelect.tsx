@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Loader2, Search, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Eye, Loader2, Search, X } from "lucide-react";
+import { DbTablePreviewPanel } from "@/components/DbTablePreviewPanel";
+import type { TablePreviewData } from "@/components/DbTablePreviewPanel";
 import { formatDbTableLabel } from "@/lib/data-source-labels";
 import { filterDbTableNames } from "@/lib/db-table-filter";
 import { cn } from "@/lib/utils";
@@ -19,6 +21,7 @@ interface DbTableMultiSelectProps {
   totalCount?: number;
   truncated?: boolean;
   onSearchTables?: (query: string) => Promise<DbTableOption[]>;
+  onPreviewTable?: (tableName: string) => Promise<TablePreviewData>;
   onChange: (tables: string[]) => void;
   compact?: boolean;
 }
@@ -30,12 +33,17 @@ export function DbTableMultiSelect({
   totalCount,
   truncated,
   onSearchTables,
+  onPreviewTable,
   onChange,
   compact,
 }: DbTableMultiSelectProps) {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [serverResults, setServerResults] = useState<DbTableOption[] | null>(null);
+  const [previewTableName, setPreviewTableName] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewData, setPreviewData] = useState<TablePreviewData | null>(null);
 
   const resolvedTotal = totalCount ?? tables.length;
   const useServerSearch = Boolean(truncated && onSearchTables && query.trim().length >= 2);
@@ -90,6 +98,47 @@ export function DbTableMultiSelect({
 
   const selectedSet = useMemo(() => new Set(selected), [selected]);
 
+  const allKnownTables = useMemo(() => {
+    const map = new Map<string, DbTableOption>();
+    for (const table of tables) map.set(table.name, table);
+    for (const table of displayTables) map.set(table.name, table);
+    return map;
+  }, [tables, displayTables]);
+
+  const closePreview = useCallback(() => {
+    setPreviewTableName(null);
+    setPreviewLoading(false);
+    setPreviewError(null);
+    setPreviewData(null);
+  }, []);
+
+  const openPreview = useCallback(
+    (tableName: string) => {
+      if (!onPreviewTable) return;
+      if (previewTableName === tableName) {
+        closePreview();
+        return;
+      }
+
+      setPreviewTableName(tableName);
+      setPreviewLoading(true);
+      setPreviewError(null);
+      setPreviewData(null);
+
+      void onPreviewTable(tableName)
+        .then((data) => {
+          setPreviewData(data);
+        })
+        .catch((error) => {
+          setPreviewError(error instanceof Error ? error.message : "Gagal memuat preview");
+        })
+        .finally(() => {
+          setPreviewLoading(false);
+        });
+    },
+    [closePreview, onPreviewTable, previewTableName]
+  );
+
   const toggle = (name: string) => {
     onChange(
       selected.includes(name) ? selected.filter((t) => t !== name) : [...selected, name]
@@ -108,6 +157,10 @@ export function DbTableMultiSelect({
   };
 
   const clearAll = () => onChange([]);
+
+  const previewLabel = previewTableName
+    ? formatDbTableLabel(allKnownTables.get(previewTableName)?.fullName ?? previewTableName)
+    : "";
 
   if (loading) {
     return (
@@ -155,7 +208,7 @@ export function DbTableMultiSelect({
         <div className="max-h-20 overflow-y-auto">
           <div className="flex flex-wrap gap-1.5">
           {selected.map((name) => {
-            const table = tables.find((t) => t.name === name);
+            const table = allKnownTables.get(name);
             const label = table ? formatDbTableLabel(table.fullName) : name;
             return (
               <button
@@ -263,31 +316,64 @@ export function DbTableMultiSelect({
             const label =
               formatDbTableLabel(table.fullName) ||
               (table.schema && table.name ? `${table.schema}.${table.name}` : table.name);
+            const previewActive = previewTableName === table.name;
             return (
-              <label
+              <div
                 key={rowKey}
                 className={cn(
-                  "flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-colors",
-                  checked ? "bg-violet-50 text-violet-900" : "text-slate-700 hover:bg-white"
+                  "flex items-center gap-1 rounded-lg px-1 py-0.5 transition-colors",
+                  previewActive ? "bg-indigo-50/80" : checked ? "bg-violet-50/80" : "hover:bg-white"
                 )}
               >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggle(table.name)}
-                  className="rounded border-slate-300 text-violet-600"
-                />
-                <span className="truncate">{label}</span>
-              </label>
+                <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-1 py-1 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggle(table.name)}
+                    className="rounded border-slate-300 text-violet-600"
+                  />
+                  <span className={cn("truncate", checked ? "text-violet-900" : "text-slate-700")}>
+                    {label}
+                  </span>
+                </label>
+                {onPreviewTable ? (
+                  <button
+                    type="button"
+                    onClick={() => openPreview(table.name)}
+                    className={cn(
+                      "shrink-0 rounded-md p-1.5 transition-colors",
+                      previewActive
+                        ? "bg-indigo-100 text-indigo-700"
+                        : "text-slate-400 hover:bg-white hover:text-indigo-600"
+                    )}
+                    title="Lihat preview tanpa memilih"
+                    aria-label={`Lihat preview ${label}`}
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
+              </div>
             );
           })
         )}
       </div>
 
+      {previewTableName && onPreviewTable ? (
+        <DbTablePreviewPanel
+          tableLabel={previewLabel}
+          loading={previewLoading}
+          error={previewError}
+          data={previewData}
+          onClose={closePreview}
+        />
+      ) : null}
+
       <p className="text-[11px] leading-relaxed text-slate-400">
-        {truncated
-          ? "Database punya banyak tabel — gunakan Cari untuk menemukan tabel di luar daftar awal."
-          : "Pilih satu atau lebih tabel. Daftar di atas bisa di-scroll jika tabel banyak."}
+        {onPreviewTable
+          ? "Klik ikon mata untuk lihat kolom dan contoh data sebelum memilih."
+          : truncated
+            ? "Database punya banyak tabel — gunakan Cari untuk menemukan tabel di luar daftar awal."
+            : "Pilih satu atau lebih tabel. Daftar di atas bisa di-scroll jika tabel banyak."}
       </p>
     </div>
   );
