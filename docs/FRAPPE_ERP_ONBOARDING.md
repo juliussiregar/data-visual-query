@@ -8,31 +8,24 @@ SheetVision menyimpan koneksi per **site ERP** (nama database `_*`). Infra dista
 
 | Situasi | Host di UI SheetVision (prod) | Setup infra |
 |---------|-------------------------------|-------------|
-| SheetVision & Frappe **server sama** | `host.docker.internal` | Publish MariaDB ke host (port `3307`) |
+| SheetVision & Frappe **server sama** | **`mariadb`** | Join Docker network Frappe (`docker_default`) |
 | Frappe **server lain** | IP private / VPN server ERP | Firewall + user `@IP_SHEETVISION` |
 | Dev dari **laptop** | `127.0.0.1` | SSH tunnel ke MariaDB (bukan untuk prod) |
 
-Port standar yang dipakai di dokumen ini: **`3307`** (host) → `3306` (container MariaDB).
+Prod same-server: Host **`mariadb`**, Port **`3306`** (nama service di compose Frappe). Tidak perlu publish port ke host.
 
 ---
 
 ## A. Server Frappe (sekali per server MariaDB)
 
-### A1. Publish MariaDB ke host
-
-Edit `docker-compose` Frappe, service `mariadb`:
-
-```yaml
-ports:
-  - "127.0.0.1:3307:3306"   # same-server SheetVision
-  # atau, jika SheetVision di server lain (private network):
-  # - "10.x.x.x:3307:3306"
-```
+### A1. Catat network Docker Frappe
 
 ```bash
-docker compose up -d mariadb
-ss -tlnp | grep 3307    # harus LISTEN
+docker ps | grep -i maria
+docker inspect <mariadb_container_id> --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}'
 ```
+
+Biasanya: **`docker_default`**. Tidak perlu menambah `ports:` pada service `mariadb` jika SheetVision join network yang sama.
 
 ### A2. Catat site & database
 
@@ -63,14 +56,14 @@ FLUSH PRIVILEGES;
 
 **Server ERP terpisah:** ganti `'%'` dengan IP server SheetVision, mis. `'sheetvision_reader'@'10.0.1.50'`.
 
-### A4. Tes dari host ERP
+### A4. Tes MariaDB (opsional, dari container Frappe network)
 
 ```bash
-mariadb -h 127.0.0.1 -P 3307 -usheetvision_reader -p \
+docker run --rm --network docker_default mariadb:10.8 \
+  mariadb -h mariadb -usheetvision_reader -p \
   -e "USE \`_9f6fb3322932e88a\`; SELECT COUNT(*) FROM tabCustomer;"
 ```
 
-- [ ] Port `3307` listen  
 - [ ] User bisa `SELECT`  
 - [ ] Password disimpan di vault / `.env` tim (jangan di git)
 
@@ -82,27 +75,34 @@ mariadb -h 127.0.0.1 -P 3307 -usheetvision_reader -p \
 
 ```bash
 cd /path/to/data-visual-query
-cp .env.example .env   # isi secret
+cp .env.example .env   # isi secret + FRAPPE_DOCKER_NETWORK
 docker compose up -d --build
 ```
 
-Compose sudah memakai `name: sheetvision` (volume terisolasi) dan `extra_hosts: host.docker.internal` pada service `app`.
+Di `.env` server:
+
+```bash
+COMPOSE_PROJECT_NAME=data-visual-query
+FRAPPE_DOCKER_NETWORK=docker_default
+```
+
+Service `app` otomatis join network Frappe lewat `docker-compose.yml` (network `frappe_erp` external).
 
 ### B2. Tes jaringan dari container app
 
-**Same server:**
+**Same server (recommended):**
 
 ```bash
-docker exec -it sheetvision-app nc -zv host.docker.internal 3307
+docker exec -it sheetvision-app nc -zv mariadb 3306
 ```
 
 **ERP di server lain** (ganti IP):
 
 ```bash
-docker exec -it sheetvision-app nc -zv 10.x.x.x 3307
+docker exec -it sheetvision-app nc -zv 10.x.x.x 3306
 ```
 
-- [ ] `nc` sukses dari `sheetvision-app`  
+- [ ] `nc` sukses dari `sheetvision-app` ke `mariadb:3306`  
 - [ ] Firewall allow IP SheetVision → MariaDB (jika beda server)
 
 ---
@@ -114,8 +114,8 @@ Login → **Sources** atau **Project baru** → tipe **MariaDB**.
 | Field | Same server | ERP server lain |
 |-------|-------------|-----------------|
 | Nama koneksi | `ERP Aluesa` | `ERP Client X` |
-| Host | `host.docker.internal` | `10.x.x.x` (private/VPN) |
-| Port | `3307` | `3307` |
+| Host | **`mariadb`** | `10.x.x.x` (private/VPN) |
+| Port | **`3306`** | `3306` |
 | Database | `_9f6fb3322932e88a` | `_xxxxxxxx` |
 | Username | `sheetvision_reader` | sama |
 | Password | dari A3 | sama |
@@ -148,8 +148,8 @@ Form dev: Host `127.0.0.1`, Port `3307`. Tunnel **tidak** dipakai di prod.
 
 | Gejala | Penyebab umum |
 |--------|----------------|
-| `ECONNREFUSED` + `127.0.0.1` di prod | App di container; pakai `host.docker.internal`, bukan localhost |
-| `ECONNREFUSED` + `host.docker.internal` | MariaDB belum publish `3307` di host |
+| `ECONNREFUSED` + `mariadb` | SheetVision app belum join network Frappe — cek `FRAPPE_DOCKER_NETWORK` + `docker compose up -d app` |
+| `ECONNREFUSED` + `host.docker.internal:3307` | Publish `127.0.0.1:3307` tidak reach dari container — pakai **`mariadb:3306`** + Docker network |
 | `Access denied` | User/password salah atau host user tidak match IP SheetVision |
 | `Unknown database` | Nama database site salah |
 | Banyak tabel, lambat | Pilih sedikit tabel; jangan load semua modul ERP |
@@ -160,14 +160,13 @@ Form dev: Host `127.0.0.1`, Port `3307`. Tunnel **tidak** dipakai di prod.
 
 **Per server MariaDB**
 
-- [ ] MariaDB publish port `3307`  
+- [ ] Network Frappe dicatat (`docker_default` atau lain)  
 - [ ] User `sheetvision_reader` + `GRANT SELECT` per database site  
-- [ ] Tes CLI dari host ERP OK  
 
 **Per server SheetVision**
 
-- [ ] `sheetvision-app` running  
-- [ ] `nc` dari container ke MariaDB OK  
+- [ ] `FRAPPE_DOCKER_NETWORK` di `.env`  
+- [ ] `sheetvision-app` running + `nc mariadb 3306` OK  
 
 **Per site ERP (UI)**
 

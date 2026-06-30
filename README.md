@@ -222,20 +222,20 @@ SheetVision jalan di container; tes koneksi dari **server app**, bukan dari brow
 | Lingkungan | Host | Port |
 |------------|------|------|
 | Dev (laptop + SSH tunnel) | `127.0.0.1` | `3307` |
-| Prod (compose SheetVision + Frappe di server yang sama) | `host.docker.internal` | `3307` |
+| Prod (same server, Docker network) | **`mariadb`** | **`3306`** |
 
-Di server ERP, publish MariaDB Frappe ke host (sekali):
+Service `app` di `docker-compose.yml` join network Frappe (`FRAPPE_DOCKER_NETWORK`, default `docker_default`). **Tidak perlu** publish MariaDB ke host.
 
-```yaml
-# frappe docker-compose — service mariadb
-ports:
-  - "127.0.0.1:3307:3306"
-```
-
-`docker-compose.yml` SheetVision sudah menyertakan `extra_hosts: host.docker.internal` pada service `app`. Setelah `docker compose up -d --build`, tes dari container:
+Set di `.env` server:
 
 ```bash
-docker exec -it sheetvision-app nc -zv host.docker.internal 3307
+FRAPPE_DOCKER_NETWORK=docker_default
+```
+
+Tes dari container:
+
+```bash
+docker exec -it sheetvision-app nc -zv mariadb 3306
 ```
 
 **Sudah deploy sebelumnya?** Sebelum `git pull` + rebuild, cek prefix volume di server (`docker volume ls`). Set `COMPOSE_PROJECT_NAME` di `.env` sama dengan deploy pertama — lihat [docs/FRAPPE_ERP_ONBOARDING.md](docs/FRAPPE_ERP_ONBOARDING.md#g-deploy-yang-sudah-berjalan).
