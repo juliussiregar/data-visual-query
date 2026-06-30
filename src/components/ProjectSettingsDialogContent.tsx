@@ -13,7 +13,8 @@ import {
 } from "lucide-react";
 import type { DatabaseConnectionProfile } from "@/lib/types";
 import type { Project } from "@/lib/project-types";
-import { connectionToApiPayload, fetchDbConnections, removeDbConnection } from "@/lib/datasource-storage";
+import { fetchDbConnections, removeDbConnection } from "@/lib/datasource-storage";
+import { fetchConnectionTables } from "@/lib/fetch-connection-tables";
 import { deleteProject, updateProject } from "@/lib/project-storage";
 import type { ProbeResult, SourceType } from "@/lib/project-source-probe";
 import {
@@ -100,6 +101,8 @@ export function ProjectSettingsDialogContent({
   const [dbTables, setDbTables] = useState<string[]>(initial.dbTables);
   const [tableRelations, setTableRelations] = useState<TableRelation[]>(initial.tableRelations);
   const [tables, setTables] = useState<{ schema: string; name: string; fullName: string }[]>([]);
+  const [tableTotalCount, setTableTotalCount] = useState(0);
+  const [tablesTruncated, setTablesTruncated] = useState(false);
   const [loadingTables, setLoadingTables] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -146,20 +149,27 @@ export function ProjectSettingsDialogContent({
   const fetchTables = useCallback(async (profile: DatabaseConnectionProfile) => {
     setLoadingTables(true);
     try {
-      const res = await fetch("/api/datasource/tables", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(connectionToApiPayload(profile)),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error);
-      setTables(json.tables ?? []);
+      const result = await fetchConnectionTables(profile);
+      setTables(result.tables);
+      setTableTotalCount(result.totalCount);
+      setTablesTruncated(result.truncated);
     } catch {
       setTables([]);
+      setTableTotalCount(0);
+      setTablesTruncated(false);
     } finally {
       setLoadingTables(false);
     }
   }, []);
+
+  const searchTables = useCallback(
+    async (query: string) => {
+      if (!selectedDb) return [];
+      const result = await fetchConnectionTables(selectedDb, query);
+      return result.tables;
+    },
+    [selectedDb]
+  );
 
   useEffect(() => {
     if (sourceType !== "database" || !selectedDb || showAddConnection || editingConnection) {
@@ -495,6 +505,9 @@ export function ProjectSettingsDialogContent({
                       tables={tables}
                       selected={dbTables}
                       loading={loadingTables}
+                      totalCount={tableTotalCount}
+                      truncated={tablesTruncated}
+                      onSearchTables={searchTables}
                       onChange={setDbTables}
                     />
                   </div>

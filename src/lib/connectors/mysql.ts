@@ -2,12 +2,14 @@ import mysql from "mysql2/promise";
 import type { Connection, ConnectionOptions, RowDataPacket } from "mysql2/promise";
 import type { ForeignKeyEdge } from "@/lib/join-key-suggest";
 import { parseTableRef } from "@/lib/sql-join-builder";
-import type { SqlConnectionConfig, SqlTableInfo } from "@/lib/connectors/sql-types";
+import type { SqlConnectionConfig, SqlTableInfo, ListSqlTablesOptions } from "@/lib/connectors/sql-types";
 import {
   defaultPortForType,
   defaultSchemaForType,
   rowToRecord,
+  SQL_TABLE_LIST_CAP,
 } from "@/lib/connectors/sql-types";
+import { escapeSqlLikePattern } from "@/lib/db-table-filter";
 
 type MysqlRow = Record<string, unknown>;
 
@@ -86,17 +88,37 @@ export async function testMysqlConnection(
   });
 }
 
-export async function listMysqlTables(config: SqlConnectionConfig): Promise<SqlTableInfo[]> {
+export async function countMysqlTables(config: SqlConnectionConfig): Promise<number> {
   const schema = effectiveSchema(config);
   return withConnection(config, async (conn) => {
     const [rows] = await conn.query<RowDataPacket[]>(
-      `SELECT table_schema, table_name
+      `SELECT COUNT(*) AS cnt
        FROM information_schema.tables
-       WHERE table_schema = ? AND table_type = 'BASE TABLE'
-       ORDER BY table_name
-       LIMIT 500`,
+       WHERE table_schema = ? AND table_type = 'BASE TABLE'`,
       [schema]
     );
+    return Number((rows[0] as MysqlRow)?.cnt ?? 0);
+  });
+}
+
+export async function listMysqlTables(
+  config: SqlConnectionConfig,
+  options?: ListSqlTablesOptions
+): Promise<SqlTableInfo[]> {
+  const schema = effectiveSchema(config);
+  const search = options?.search?.trim();
+  return withConnection(config, async (conn) => {
+    const params: unknown[] = [schema];
+    let sql = `SELECT table_schema, table_name
+       FROM information_schema.tables
+       WHERE table_schema = ? AND table_type = 'BASE TABLE'`;
+    if (search) {
+      sql += ` AND table_name LIKE ? ESCAPE '\\\\'`;
+      params.push(`%${escapeSqlLikePattern(search)}%`);
+    }
+    sql += ` ORDER BY table_name`;
+    sql += search ? ` LIMIT 200` : ` LIMIT ${SQL_TABLE_LIST_CAP}`;
+    const [rows] = await conn.query<RowDataPacket[]>(sql, params);
     return (rows as MysqlRow[]).map((r) => {
       const schema = mysqlField(r, "table_schema", "TABLE_SCHEMA");
       const name = mysqlField(r, "table_name", "TABLE_NAME");

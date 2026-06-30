@@ -1,6 +1,9 @@
 import pg from "pg";
 import { parseTableRef } from "@/lib/sql-join-builder";
 import type { ForeignKeyEdge } from "@/lib/join-key-suggest";
+import type { ListSqlTablesOptions } from "@/lib/connectors/sql-types";
+import { SQL_TABLE_LIST_CAP } from "@/lib/connectors/sql-types";
+import { escapeSqlLikePattern } from "@/lib/db-table-filter";
 
 const { Pool } = pg;
 
@@ -88,20 +91,43 @@ export async function testPostgresConnection(
   }
 }
 
-export async function listPostgresTables(
+export async function countPostgresTables(
   config: PostgresConnectionConfig
-): Promise<{ schema: string; name: string; fullName: string }[]> {
+): Promise<number> {
   const pool = new Pool(toPoolConfig(config));
   const schema = config.schema ?? "public";
   try {
     const res = await pool.query(
-      `SELECT table_schema, table_name
+      `SELECT COUNT(*)::int AS cnt
        FROM information_schema.tables
-       WHERE table_schema = $1 AND table_type = 'BASE TABLE'
-       ORDER BY table_name
-       LIMIT 200`,
+       WHERE table_schema = $1 AND table_type = 'BASE TABLE'`,
       [schema]
     );
+    return Number(res.rows[0]?.cnt ?? 0);
+  } finally {
+    await pool.end();
+  }
+}
+
+export async function listPostgresTables(
+  config: PostgresConnectionConfig,
+  options?: ListSqlTablesOptions
+): Promise<{ schema: string; name: string; fullName: string }[]> {
+  const pool = new Pool(toPoolConfig(config));
+  const schema = config.schema ?? "public";
+  const search = options?.search?.trim();
+  try {
+    const params: unknown[] = [schema];
+    let sql = `SELECT table_schema, table_name
+       FROM information_schema.tables
+       WHERE table_schema = $1 AND table_type = 'BASE TABLE'`;
+    if (search) {
+      params.push(`%${escapeSqlLikePattern(search)}%`);
+      sql += ` AND table_name ILIKE $${params.length} ESCAPE '\\'`;
+    }
+    sql += ` ORDER BY table_name`;
+    sql += search ? ` LIMIT 200` : ` LIMIT ${SQL_TABLE_LIST_CAP}`;
+    const res = await pool.query(sql, params);
     return res.rows.map((r: { table_schema: string; table_name: string }) => ({
       schema: r.table_schema,
       name: r.table_name,

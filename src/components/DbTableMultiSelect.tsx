@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2, Search, X } from "lucide-react";
 import { formatDbTableLabel } from "@/lib/data-source-labels";
 import { filterDbTableNames } from "@/lib/db-table-filter";
@@ -16,6 +16,9 @@ interface DbTableMultiSelectProps {
   tables: DbTableOption[];
   selected: string[];
   loading?: boolean;
+  totalCount?: number;
+  truncated?: boolean;
+  onSearchTables?: (query: string) => Promise<DbTableOption[]>;
   onChange: (tables: string[]) => void;
   compact?: boolean;
 }
@@ -24,22 +27,65 @@ export function DbTableMultiSelect({
   tables,
   selected,
   loading,
+  totalCount,
+  truncated,
+  onSearchTables,
   onChange,
   compact,
 }: DbTableMultiSelectProps) {
   const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [serverResults, setServerResults] = useState<DbTableOption[] | null>(null);
+
+  const resolvedTotal = totalCount ?? tables.length;
+  const useServerSearch = Boolean(truncated && onSearchTables && query.trim().length >= 2);
+
+  useEffect(() => {
+    if (!useServerSearch) {
+      setServerResults(null);
+      setSearching(false);
+      return;
+    }
+
+    const q = query.trim();
+    let cancelled = false;
+    setSearching(true);
+
+    const timer = window.setTimeout(() => {
+      void onSearchTables!(q)
+        .then((next) => {
+          if (!cancelled) setServerResults(next);
+        })
+        .catch(() => {
+          if (!cancelled) setServerResults([]);
+        })
+        .finally(() => {
+          if (!cancelled) setSearching(false);
+        });
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [query, useServerSearch, onSearchTables]);
+
+  const displayTables = useMemo(() => {
+    if (useServerSearch) return serverResults ?? [];
+    return tables;
+  }, [tables, useServerSearch, serverResults]);
 
   const filteredTables = useMemo(
     () =>
       filterDbTableNames(
-        tables.map((t) => t.name),
-        query,
+        displayTables.map((t) => t.name),
+        useServerSearch ? "" : query,
         (name) => {
-          const table = tables.find((t) => t.name === name);
+          const table = displayTables.find((t) => t.name === name);
           return table ? formatDbTableLabel(table.fullName) : name;
         }
-      ).map((name) => tables.find((t) => t.name === name)!),
-    [tables, query]
+      ).map((name) => displayTables.find((t) => t.name === name)!),
+    [displayTables, query, useServerSearch]
   );
 
   const selectedSet = useMemo(() => new Set(selected), [selected]);
@@ -72,7 +118,7 @@ export function DbTableMultiSelect({
     );
   }
 
-  if (tables.length === 0) {
+  if (tables.length === 0 && !truncated) {
     return (
       <p className="text-xs text-slate-500">
         Belum ada tabel yang bisa dipilih. Periksa koneksi database Anda.
@@ -81,7 +127,7 @@ export function DbTableMultiSelect({
   }
 
   const filteredSelectedCount = filteredTables.filter((t) => selectedSet.has(t.name)).length;
-  const showBulkActions = tables.length > 6;
+  const showBulkActions = (useServerSearch ? filteredTables.length : tables.length) > 6;
 
   return (
     <div className="space-y-2">
@@ -89,7 +135,10 @@ export function DbTableMultiSelect({
         <p className="text-[11px] text-slate-500">
           <span className="font-medium text-slate-700">{selected.length}</span> dipilih
           {" · "}
-          {tables.length} tabel
+          {resolvedTotal} tabel di database
+          {truncated && !useServerSearch ? (
+            <span className="text-amber-600"> (menampilkan {tables.length})</span>
+          ) : null}
         </p>
         {selected.length > 0 && (
           <button
@@ -134,22 +183,38 @@ export function DbTableMultiSelect({
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Cari tabel…"
+          placeholder={
+            truncated
+              ? "Cari tabel (min. 2 huruf untuk cari di seluruh database)…"
+              : "Cari tabel…"
+          }
           className="w-full rounded-[10px] border border-slate-200 bg-white py-2 pl-10 pr-8 text-xs leading-normal text-slate-900 placeholder:text-slate-400 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/15"
         />
-        {query && (
-          <button
-            type="button"
-            onClick={() => setQuery("")}
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-slate-600"
-            aria-label="Hapus pencarian"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+        {(query || searching) && (
+          <div className="absolute right-2 top-1/2 -translate-y-1/2">
+            {searching ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
+            ) : query ? (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                className="rounded p-0.5 text-slate-400 hover:text-slate-600"
+                aria-label="Hapus pencarian"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
         )}
       </div>
 
-      {showBulkActions && (
+      {truncated && query.trim().length > 0 && query.trim().length < 2 && (
+        <p className="text-[11px] text-amber-700">
+          Ketik minimal 2 huruf untuk mencari di semua {resolvedTotal} tabel.
+        </p>
+      )}
+
+      {showBulkActions && !useServerSearch && (
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -180,9 +245,16 @@ export function DbTableMultiSelect({
         role="listbox"
         aria-label="Daftar tabel"
       >
-        {filteredTables.length === 0 ? (
+        {searching ? (
+          <p className="flex items-center justify-center gap-2 px-2 py-6 text-xs text-slate-400">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Mencari…
+          </p>
+        ) : filteredTables.length === 0 ? (
           <p className="px-2 py-6 text-center text-xs text-slate-400">
-            Tidak ada tabel cocok dengan &ldquo;{query}&rdquo;
+            {useServerSearch && query.trim().length < 2
+              ? "Ketik minimal 2 huruf untuk mencari."
+              : `Tidak ada tabel cocok dengan "${query}"`}
           </p>
         ) : (
           filteredTables.map((table) => {
@@ -213,7 +285,9 @@ export function DbTableMultiSelect({
       </div>
 
       <p className="text-[11px] leading-relaxed text-slate-400">
-        Pilih satu atau lebih tabel. Daftar di atas bisa di-scroll jika tabel banyak.
+        {truncated
+          ? "Database punya banyak tabel — gunakan Cari untuk menemukan tabel di luar daftar awal."
+          : "Pilih satu atau lebih tabel. Daftar di atas bisa di-scroll jika tabel banyak."}
       </p>
     </div>
   );

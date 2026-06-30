@@ -6,8 +6,8 @@ import {
   normalizeDatabaseType,
   sqlSourceLabel,
 } from "@/lib/connectors/sql-types";
-import { parsePostgresBody, testPostgresConnection, listPostgresTables, previewPostgresTable, loadPostgresTable, listPostgresForeignKeysBetween } from "@/lib/connectors/postgres";
-import { parseMysqlBody, testMysqlConnection, listMysqlTables, previewMysqlTable, loadMysqlTable, listMysqlForeignKeysBetween } from "@/lib/connectors/mysql";
+import { parsePostgresBody, testPostgresConnection, listPostgresTables, countPostgresTables, previewPostgresTable, loadPostgresTable, listPostgresForeignKeysBetween } from "@/lib/connectors/postgres";
+import { parseMysqlBody, testMysqlConnection, listMysqlTables, countMysqlTables, previewMysqlTable, loadMysqlTable, listMysqlForeignKeysBetween } from "@/lib/connectors/mysql";
 export { executeSqlQuery } from "@/lib/connectors/sql-query";
 import type { ForeignKeyEdge } from "@/lib/join-key-suggest";
 
@@ -41,9 +41,17 @@ export async function testSqlConnection(
   return testPostgresConnection(config);
 }
 
-export async function listSqlTables(config: SqlConnectionConfig): Promise<SqlTableInfo[]> {
-  if (isMysqlFamily(config.type)) return listMysqlTables(config);
-  return listPostgresTables(config);
+export async function countSqlTables(config: SqlConnectionConfig): Promise<number> {
+  if (isMysqlFamily(config.type)) return countMysqlTables(config);
+  return countPostgresTables(config);
+}
+
+export async function listSqlTables(
+  config: SqlConnectionConfig,
+  options?: import("./sql-types").ListSqlTablesOptions
+): Promise<SqlTableInfo[]> {
+  if (isMysqlFamily(config.type)) return listMysqlTables(config, options);
+  return listPostgresTables(config, options);
 }
 
 export async function previewSqlTable(
