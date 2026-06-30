@@ -3,7 +3,7 @@ import { attachColumnLineage, buildLineageSummary } from "./lineage";
 import { runDataQualityChecks } from "./data-quality";
 import { aggregateData, CHART_COLORS } from "./aggregation";
 import { buildGenericMetrics } from "./generic-metrics";
-import { formatCurrency, formatNumber, parseNumber, inferColumnIsCurrency, formatDisplayValue, isIdentifierColumn } from "./format";
+import { formatCurrency, formatCurrencyFull, formatNumber, parseNumber, inferColumnIsCurrency, formatDisplayValue, isIdentifierColumn } from "./format";
 import type {
   ChartConfig,
   ChartDataPoint,
@@ -203,7 +203,7 @@ function generateKpis(
     const max = values.length > 0 ? Math.max(...values) : 0;
 
     const money = inferColumnIsCurrency(mainNumeric);
-    const fmt = (n: number) => (money ? formatCurrency(n) : formatDisplayValue(n));
+    const fmt = (n: number) => (money ? formatCurrencyFull(n) : formatDisplayValue(n));
 
     kpis.push({
       id: "total-sum",
@@ -299,7 +299,7 @@ function generateInsights(
       .filter((v): v is number => v !== null);
     const total = values.reduce((a, b) => a + b, 0);
     const money = inferColumnIsCurrency(mainNumeric);
-    const fmt = (n: number) => (money ? formatCurrency(n) : formatDisplayValue(n));
+    const fmt = (n: number) => (money ? formatCurrencyFull(n) : formatDisplayValue(n));
     insights.push({
       id: "total-value",
       title: `Total ${mainNumeric.label}: ${fmt(total)}`,
@@ -391,12 +391,15 @@ function generateTopRecords(
     .sort((a, b) => b.value - a.value)
     .slice(0, 10);
 
+  const money = inferColumnIsCurrency(mainNumeric);
+  const fmt = (n: number) => (money ? formatCurrencyFull(n) : formatDisplayValue(n));
+
   return records.map((r, i) => ({
     rank: i + 1,
     label: r.label,
     sublabel: r.sublabel,
     value: r.value,
-    valueFormatted: formatCurrency(r.value),
+    valueFormatted: fmt(r.value),
     badge: r.badge,
   }));
 }

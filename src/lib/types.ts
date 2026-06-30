@@ -359,6 +359,8 @@ export interface WidgetConfig {
   sourceTable?: string;
   /** Konfigurasi data: filter, group by, agregasi */
   dataQuery?: WidgetDataQuery;
+  /** Format tampilan nilai: auto = deteksi dari nama kolom, currency = Rp, number = angka biasa */
+  valueFormat?: "auto" | "currency" | "number";
 }
 
 export type WidgetVisualShape =

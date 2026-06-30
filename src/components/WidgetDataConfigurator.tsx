@@ -33,6 +33,7 @@ import {
   ChevronDown,
   HelpCircle,
   LayoutGrid,
+  Banknote,
 } from "lucide-react";
 import { formatDbTableLabel } from "@/lib/db-table-datasets";
 import { formatDatasetLabel } from "@/lib/table-relations";
@@ -411,6 +412,29 @@ export const WidgetDataConfigurator = forwardRef<
               </select>
             )}
           </div>
+        </Section>
+      )}
+
+      {(widget.visualShape === "stat" || (needsAggregation && needsMeasure)) && (
+        <Section
+          title="Format nilai"
+          icon={Banknote}
+          hint="Auto mendeteksi dari nama kolom (amount, price, skor, dll.). Pilih manual jika dataset punya nama kolom ambigu."
+        >
+          <select
+            value={widget.valueFormat ?? "auto"}
+            onChange={(e) =>
+              onChange({
+                ...widget,
+                valueFormat: e.target.value as WidgetConfig["valueFormat"],
+              })
+            }
+            className="input-field text-xs"
+          >
+            <option value="auto">Auto — deteksi dari nama kolom</option>
+            <option value="currency">Rupiah (Rp)</option>
+            <option value="number">Angka biasa (tanpa Rp)</option>
+          </select>
         </Section>
       )}
 

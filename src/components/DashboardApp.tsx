@@ -1784,6 +1784,11 @@ export function DashboardApp() {
             onLoad={() => {
               void handleProjectReload(settingsProject ?? activeProject!);
             }}
+            onOpenSources={() => {
+              setShowSettingsDialog(false);
+              setSettingsProject(null);
+              setActiveView("sources");
+            }}
             loading={loading}
           />
         </AppDialog>

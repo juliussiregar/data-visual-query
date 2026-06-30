@@ -10,7 +10,7 @@ import type {
 } from "./types";
 import { aggregateData, CHART_COLORS } from "./aggregation";
 import { applyVisualQuery, type VisualQuery } from "./visual-query";
-import { formatNumber, parseNumber, inferColumnIsCurrency } from "./format";
+import { formatNumber, parseNumber, inferColumnIsCurrency, shouldFormatAsCurrency, formatCurrencyFull, formatDisplayValue, formatColumnValue } from "./format";
 import { chartConfigFromVisualSqlResult, executeVisualSql } from "./visual-sql";
 
 export const EMPTY_WIDGET_DATA_QUERY: WidgetDataQuery = {
@@ -96,7 +96,11 @@ export function buildChartFromWidget(data: SheetData, widget: WidgetConfig): Cha
   const catLabel = data.columns.find((c) => c.key === groupBy)?.label ?? groupBy;
   const measureCol = measure ? data.columns.find((c) => c.key === measure) : undefined;
   const valueFormat =
-    measureCol && inferColumnIsCurrency(measureCol) ? ("currency" as const) : ("number" as const);
+    widget.valueFormat === "currency" || widget.valueFormat === "number"
+      ? widget.valueFormat
+      : measureCol && inferColumnIsCurrency(measureCol)
+        ? ("currency" as const)
+        : ("number" as const);
 
   return {
     id: widget.chartId ?? widget.id,
@@ -157,10 +161,18 @@ export function buildStatFromWidget(
       value = count;
   }
 
-  const colLabel = data.columns.find((c) => c.key === measure)?.label ?? measure;
+  const measureCol = data.columns.find((c) => c.key === measure);
+  const fmtMode = widget.valueFormat ?? "auto";
+  const isCurrency = shouldFormatAsCurrency(
+    measureCol ?? { key: measure ?? "", label: widget.title ?? "" },
+    fmtMode
+  );
+  const fmt = (n: number) => (isCurrency ? formatCurrencyFull(n) : formatDisplayValue(n));
+
+  const colLabel = measureCol?.label ?? measure;
   return {
     label: widget.title ?? `${AGGREGATION_LABELS[q.aggregation]} ${colLabel}`,
-    value: Number.isInteger(value) ? value.toLocaleString("id-ID") : value.toLocaleString("id-ID", { maximumFractionDigits: 2 }),
+    value: fmt(value),
   };
 }
 
@@ -193,14 +205,16 @@ export function buildTopRecordsFromWidget(data: SheetData, widget: WidgetConfig)
 
   const badgeCol = data.columns.find((c) => c.type === "category")?.key;
 
+  const sortCol = data.columns.find((c) => c.key === sortKey);
+
   return sorted.slice(0, limit).map((row, i) => {
     const raw = row[sortKey] ?? "";
-    const num = parseFloat(raw.replace(/[^\d.-]/g, "")) || 0;
+    const num = parseNumber(raw) ?? (parseFloat(raw.replace(/[^\d.-]/g, "")) || 0);
     return {
       rank: i + 1,
       label: row[labelCol] ?? `Baris ${i + 1}`,
       value: num,
-      valueFormatted: raw || num.toLocaleString("id-ID"),
+      valueFormatted: sortCol ? formatColumnValue(sortCol, raw || num) : formatDisplayValue(num),
       badge: badgeCol && badgeCol !== labelCol ? row[badgeCol] : undefined,
     };
   });
@@ -270,7 +284,9 @@ export function computeTableSummaryRow(
     result[col.key] =
       summary.aggregation === "count"
         ? String(Math.round(value))
-        : formatNumber(value);
+        : inferColumnIsCurrency(col)
+          ? formatCurrencyFull(value)
+          : formatNumber(value);
   }
 
   return result;

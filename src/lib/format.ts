@@ -37,7 +37,7 @@ export function roundMetricValue(value: number, decimals = 2): number {
 }
 
 const CURRENCY_COLUMN_HINTS =
-  /plafond|plafon|jumlah|amount|revenue|sales|pendapatan|harga|price|biaya|cost|payment|outstanding|saldo|budget|order_total|unit_price|subtotal|nilai_kredit|gross|net_sales|total_amount/i;
+  /plafond|plafon|jumlah|amount|revenue|sales|pendapatan|harga|price|biaya|cost|payment|outstanding|saldo|budget|order_total|unit_price|subtotal|nilai_kredit|gross|net_sales|total_amount|bunga|tertunggak|tunggakan|kredit|portofolio|pokok|angsuran|piutang|limit_kredit|nominal/i;
 
 const NON_CURRENCY_COLUMN_HINTS =
   /tugas|ulangan|ujian|fisika|biologi|matematika|ipa_|skor|score|percent|persen|suhu|temp|humidity|co2|vibration|baseline|steady|peak_load|thermal|air_score|beban|kesehatan|avg_value|min_value|max_value|reading|signal|kelembapan|grade|student_id|student_code|device_code|device_id|^id$|_code$/i;
@@ -68,12 +68,24 @@ export function inferColumnIsCurrency(
   return false;
 }
 
+export type ValueDisplayFormat = "auto" | "currency" | "number";
+
+/** Tentukan apakah nilai diformat Rp — override manual atau deteksi otomatis. */
+export function shouldFormatAsCurrency(
+  column: { key: string; label?: string; businessLabel?: string; semanticRole?: string },
+  format: ValueDisplayFormat = "auto"
+): boolean {
+  if (format === "currency") return true;
+  if (format === "number") return false;
+  return inferColumnIsCurrency(column);
+}
+
 /** Format nilai tabel/query — angka dibulatkan, teks dibiarkan. */
 export function formatDisplayValue(value: string | number): string {
   if (typeof value === "number") {
     if (!Number.isFinite(value)) return String(value);
     const rounded = roundMetricValue(value);
-    if (Number.isInteger(rounded)) return String(rounded);
+    if (Number.isInteger(rounded)) return rounded.toLocaleString("id-ID");
     return rounded.toLocaleString("id-ID", {
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
@@ -82,6 +94,35 @@ export function formatDisplayValue(value: string | number): string {
   const num = parseNumber(value);
   if (num !== null) return formatDisplayValue(num);
   return value;
+}
+
+/** Rupiah penuh (stat card, tabel) — tanpa singkatan jt/M. */
+export function formatCurrencyFull(value: number): string {
+  if (!Number.isFinite(value)) return String(value);
+  const rounded = roundMetricValue(value);
+  const hasFraction = !Number.isInteger(rounded);
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    minimumFractionDigits: hasFraction ? 2 : 0,
+    maximumFractionDigits: hasFraction ? 2 : 0,
+  }).format(rounded);
+}
+
+/** Format nilai berdasarkan metadata kolom — Rp hanya jika kolom terdeteksi uang. */
+export function formatColumnValue(
+  column: { key: string; label?: string; businessLabel?: string; semanticRole?: string; type?: string },
+  value: string | number
+): string {
+  if (typeof value === "string" && (value.trim() === "" || value === "—")) {
+    return value.trim() === "" ? "—" : value;
+  }
+
+  const num = typeof value === "number" ? value : parseNumber(value);
+  if (num === null) return String(value);
+
+  if (inferColumnIsCurrency(column)) return formatCurrencyFull(num);
+  return formatDisplayValue(num);
 }
 
 export function formatNumber(value: number, compact = false): string {

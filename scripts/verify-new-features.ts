@@ -33,7 +33,8 @@ import { evaluateAggregateFormula, evaluateRowExpression } from "../src/lib/form
 import { executeVisualSql, parseVisualSql, normalizeVisualSql, chartConfigFromVisualSqlResult, columnKeysInVisualSql, toggleVisualSqlColumn, visualSqlExamplesForColumns } from "../src/lib/visual-sql";
 import { executeAiQueryTool } from "../src/lib/ai-query-tools";
 import { analyzeSheetData } from "../src/lib/analyzer";
-import { isIdentifierColumn, inferColumnIsCurrency } from "../src/lib/format";
+import { isIdentifierColumn, inferColumnIsCurrency, formatColumnValue, formatCurrencyFull } from "../src/lib/format";
+import { buildStatFromWidget } from "../src/lib/widget-data";
 import type { ColumnMeta } from "../src/lib/types";
 
 const BASE = process.env.VERIFY_APP_URL ?? "http://localhost:3001";
@@ -273,6 +274,52 @@ function testDerivedFields(healthRows: Record<string, string>[], gradeRows: Reco
   assert("student_code = identifier", isIdentifierColumn("student_code"));
   assert("tugas bukan identifier", !isIdentifierColumn("tugas"));
   assert("student_code bukan currency", !inferColumnIsCurrency("student_code"));
+  assert("PLAFOND = currency", inferColumnIsCurrency("PLAFOND"));
+  assert("OUTSTANDING = currency", inferColumnIsCurrency("OUTSTANDING"));
+  assert("tugas bukan currency", !inferColumnIsCurrency("tugas"));
+  assert(
+    "formatColumnValue PLAFOND pakai Rp",
+    formatColumnValue({ key: "PLAFOND", type: "number" }, "350000000").startsWith("Rp"),
+    formatColumnValue({ key: "PLAFOND", type: "number" }, "350000000")
+  );
+  assert(
+    "formatColumnValue tugas tanpa Rp",
+    !formatColumnValue({ key: "tugas", type: "number" }, "80").includes("Rp"),
+    formatColumnValue({ key: "tugas", type: "number" }, "80")
+  );
+  assert(
+    "formatCurrencyFull avg desimal",
+    formatCurrencyFull(481584711.42).includes("Rp"),
+    formatCurrencyFull(481584711.42)
+  );
+
+  const creditSheet = sheetFromRows([
+    { PLAFOND: "350000000", OUTSTANDING: "100000000", tugas: "80" },
+  ]);
+  const plafondStat = buildStatFromWidget(creditSheet, {
+    id: "stat-plafond",
+    type: "stat",
+    visualShape: "stat",
+    title: "Total Plafond",
+    dataQuery: { measureKey: "PLAFOND", aggregation: "sum", conditions: [] },
+  });
+  assert(
+    "Stat widget PLAFOND pakai Rp",
+    Boolean(plafondStat?.value.startsWith("Rp")),
+    plafondStat?.value
+  );
+  const scoreStat = buildStatFromWidget(creditSheet, {
+    id: "stat-tugas",
+    type: "stat",
+    visualShape: "stat",
+    title: "Rata Tugas",
+    dataQuery: { measureKey: "tugas", aggregation: "avg", conditions: [] },
+  });
+  assert(
+    "Stat widget tugas tanpa Rp",
+    Boolean(scoreStat && !scoreStat.value.includes("Rp")),
+    scoreStat?.value
+  );
 
   const analyzed = analyzeSheetData(gradeRows, "test", new Date().toISOString());
   const totalInsight = analyzed.insights.find((i) => i.id === "total-value");
