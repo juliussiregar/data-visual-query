@@ -1,5 +1,5 @@
 import type { SheetData, WidgetConfig } from "./types";
-import { formatDbTableLabel as formatTableLabel } from "./data-source-labels";
+import { formatDbTableLabel as formatTableLabel, databaseTableFromSourceUrl } from "./data-source-labels";
 
 export function normalizeActiveDbTables(tables: string[]): string[] {
   return [...new Set(tables.map((t) => t.trim()).filter(Boolean))];
@@ -17,6 +17,25 @@ export function resolveProjectDbTables(project: {
 
 export function syncLegacyActiveDbTable(tables: string[]): string | null {
   return tables[0] ?? null;
+}
+
+export function resolveLoadedDbTableList(
+  data: {
+    tables?: string[];
+    primaryTable?: string;
+    dbSource?: { table?: string };
+    sheetUrls?: string[];
+  },
+  fallbackTables: string[] = []
+): string[] {
+  if (data.tables?.length) return data.tables;
+  if (data.primaryTable?.trim()) return [data.primaryTable.trim()];
+  if (data.dbSource?.table?.trim()) return [data.dbSource.table.trim()];
+  const fromUrls = (data.sheetUrls ?? [])
+    .map(databaseTableFromSourceUrl)
+    .filter((t): t is string => Boolean(t));
+  if (fromUrls.length > 0) return fromUrls;
+  return fallbackTables;
 }
 
 export function resolveWidgetSheetData(

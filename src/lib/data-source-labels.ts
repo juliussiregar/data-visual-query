@@ -39,7 +39,16 @@ export function databaseTableFromSourceUrl(url: string): string | null {
 export const postgresTableFromSourceUrl = databaseTableFromSourceUrl;
 
 export function formatDbTableLabel(table: string): string {
-  return table.trim();
+  const trimmed = table.trim();
+  const dot = trimmed.lastIndexOf(".");
+  if (dot > 0 && dot < trimmed.length - 1) {
+    const schema = trimmed.slice(0, dot);
+    const name = trimmed.slice(dot + 1);
+    if (/^_[a-f0-9]{32}$/i.test(schema) || /^[a-f0-9]{32}$/i.test(schema)) {
+      return name;
+    }
+  }
+  return trimmed;
 }
 
 /** @deprecated Use formatDbTableLabel */

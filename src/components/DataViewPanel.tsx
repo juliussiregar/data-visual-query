@@ -50,16 +50,28 @@ export function DataViewPanel({
 }: DataViewPanelProps) {
   const [tab, setTab] = useState<DataTab>("table");
 
+  const tableLabel = selectedTable
+    ? formatDbTableLabel(selectedTable)
+    : availableTables[0]
+      ? formatDbTableLabel(availableTables[0])
+      : "";
+  const showTablePicker = availableTables.length > 1 && onSelectTable;
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">Data</h2>
           <p className="mt-1 text-sm text-slate-500">
+            {tableLabel ? (
+              <>
+                <span className="font-medium text-slate-700">{tableLabel}</span>
+                {" · "}
+              </>
+            ) : null}
             {sheetData.rows.length.toLocaleString()} rows · {sheetData.columns.length} columns
-            {availableTables.length > 1 && selectedTable ? ` · ${selectedTable}` : ""}
           </p>
-          {availableTables.length > 1 && onSelectTable && (
+          {showTablePicker && (
             <div className="mt-2 max-w-md">
               <DbTableSelect
                 value={selectedTable ?? availableTables[0]}

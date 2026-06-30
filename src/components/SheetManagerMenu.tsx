@@ -151,9 +151,11 @@ export function SheetManagerMenu({
       : "Database SQL"
     : "Google Sheet";
   const panelSubtitle = isDatabase
-    ? isMulti
-      ? `${tableCount} tabel aktif di project`
-      : "1 tabel aktif"
+    ? tableCount === 0
+      ? "Belum ada tabel"
+      : tableCount === 1
+        ? formatDbTableLabel(activeDbTables[0]!)
+        : `${tableCount} tabel aktif di project`
     : isMulti
       ? joinMode
         ? `${sheetUrls.length} sheet · mode relasional (join)`
